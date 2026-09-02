@@ -9,6 +9,8 @@ type Job = {
   product_url?: string | null;
   product_id?: string | null;
   focus?: string | null;
+  scene?: string | null;
+  motion_style?: string | null;
   listing_images?: string[];
   review_images?: string[];
   selected_refs?: string[];
@@ -28,8 +30,10 @@ type Batch = {
   id: string;
   name?: string | null;
   scene?: string | null;
+  scene_pool?: string[];
   creator_profile?: string | null;
   video_style?: string | null;
+  motion_pool?: string[];
   auto_approve: boolean;
   status: string;
   counts: Record<string, number | Record<string, number>>;
@@ -37,6 +41,14 @@ type Batch = {
 };
 
 type ScannerRow = Record<string, string | number> & { _row_num?: number };
+
+type VideoPromptInfo = {
+  job_id: string;
+  default_prompt: string;
+  prompt_used: string;
+  source: "last_used" | "default" | string;
+  can_regenerate: boolean;
+};
 
 type Health = {
   ok: boolean;
@@ -50,9 +62,19 @@ type Health = {
   video_final_resolution: string;
 };
 
-const scenes = ["Modern apartment mirror", "Walk-in closet", "Luxury bathroom mirror", "Penthouse at night"];
+const scenes = ["Modern apartment mirror", "Walk-in closet", "Luxury bathroom mirror", "Penthouse at night", "Casual bedroom mirror", "Modern hotel room mirror", "Warm living room mirror", "Apartment entryway mirror"];
 const profiles = ["Male", "Female"];
-const styles = ["Calm", "High-energy", "Flashy"];
+const styles = ["Calm", "Casual UGC", "Fit Check", "Detail Focus", "Streetwear", "High-energy", "Flashy"];
+const productTypes = [
+  { value: "outfit", label: "Outfit / Set" },
+  { value: "shirt", label: "Shirt / Top" },
+  { value: "hoodie", label: "Hoodie / Jacket" },
+  { value: "pants", label: "Pants / Bottoms" },
+  { value: "shoes", label: "Shoes" },
+  { value: "handbag", label: "Bag / Handbag" },
+];
+
+type JobSettings = { focus: string; scene: string; motion_style: string };
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api/backend${path}`, { ...init, cache: "no-store" });
@@ -84,9 +106,9 @@ export default function Home() {
   const [error, setError] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [name, setName] = useState("Today's Fashion Batch");
-  const [scene, setScene] = useState(scenes[0]);
+  const [scenePool, setScenePool] = useState<string[]>([scenes[0]]);
   const [profile, setProfile] = useState(profiles[0]);
-  const [videoStyle, setVideoStyle] = useState(styles[0]);
+  const [motionPool, setMotionPool] = useState<string[]>([styles[0]]);
   const [autoApprove, setAutoApprove] = useState(false);
   const [avatarB64, setAvatarB64] = useState<string | null>(null);
   const [avatarMime, setAvatarMime] = useState("image/jpeg");
@@ -94,7 +116,12 @@ export default function Home() {
   const [regen, setRegen] = useState<Record<string, string>>({});
   const [photoJobId, setPhotoJobId] = useState<string | null>(null);
   const [refPick, setRefPick] = useState<Record<string, string[]>>({});
+  const [jobSettings, setJobSettings] = useState<Record<string, JobSettings>>({});
   const [previewImage, setPreviewImage] = useState<{ url: string; title: string; jobId: string } | null>(null);
+  const [videoPromptJobId, setVideoPromptJobId] = useState<string | null>(null);
+  const [videoPromptInfo, setVideoPromptInfo] = useState<VideoPromptInfo | null>(null);
+  const [videoPromptDraft, setVideoPromptDraft] = useState("");
+  const [promptLoading, setPromptLoading] = useState(false);
 
   const loadHealth = useCallback(async () => {
     try { setHealth(await api<Health>("/health")); } catch (e) { setError(e instanceof Error ? e.message : "Health check failed"); }
@@ -149,15 +176,30 @@ export default function Home() {
 
   const photoJob = photoJobId ? selected?.jobs.find(j => j.id === photoJobId) || null : null;
   const previewJob = previewImage ? selected?.jobs.find(j => j.id === previewImage.jobId) || null : null;
+  const videoPromptJob = videoPromptJobId ? selected?.jobs.find(j => j.id === videoPromptJobId) || null : null;
 
   function flash(msg: string) { setMessage(msg); setError(""); setTimeout(() => setMessage(""), 3500); }
+  function productTypeLabel(value?: string | null) { return productTypes.find(x => x.value === value)?.label || "Outfit / Set"; }
+  function togglePool(value: string, current: string[], setter: (next: string[]) => void) {
+    if (current.includes(value)) {
+      if (current.length === 1) return;
+      setter(current.filter(x => x !== value));
+    } else setter([...current, value]);
+  }
+  function settingsFor(job: Job): JobSettings {
+    return jobSettings[job.id] || {
+      focus: job.focus || "outfit",
+      scene: job.scene || selected?.scene || scenes[0],
+      motion_style: job.motion_style || selected?.video_style || styles[0],
+    };
+  }
 
   async function createBatch() {
     setLoading(true); setError("");
     try {
       const batch = await api<Batch>("/batches", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name, scene, creator_profile: profile, video_style: videoStyle, auto_approve: autoApprove, avatar_b64: avatarB64, avatar_mime: avatarMime })
+        body: JSON.stringify({ name, scene: scenePool[0], scene_pool: scenePool, creator_profile: profile, video_style: motionPool[0], motion_pool: motionPool, auto_approve: autoApprove, avatar_b64: avatarB64, avatar_mime: avatarMime })
       });
       setSelectedId(batch.id); setSelected(batch); setShowCreate(false); await loadBatches(); flash("Batch created");
     } catch (e) { setError(e instanceof Error ? e.message : "Could not create batch"); }
@@ -202,6 +244,7 @@ export default function Home() {
 
   function openPhotoPicker(job: Job) {
     setRefPick(prev => ({ ...prev, [job.id]: prev[job.id] ?? job.selected_refs ?? [] }));
+    setJobSettings(prev => ({ ...prev, [job.id]: prev[job.id] || { focus: job.focus || "outfit", scene: job.scene || selected?.scene || scenes[0], motion_style: job.motion_style || selected?.video_style || styles[0] } }));
     setPhotoJobId(job.id);
   }
 
@@ -223,9 +266,10 @@ export default function Home() {
     if (!refs.length) { setError("Select at least one product photo."); return; }
     setLoading(true); setError("");
     try {
+      const production = settingsFor(job);
       await api<Job>(`/jobs/${job.id}/references`, {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ refs, start_generation: true })
+        body: JSON.stringify({ refs, start_generation: true, focus: production.focus, scene: production.scene, motion_style: production.motion_style })
       });
       setPhotoJobId(null);
       await loadSelected();
@@ -253,6 +297,38 @@ export default function Home() {
     setLoading(true); setError("");
     try { await api<Job>(`/jobs/${job.id}/regenerate`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ instruction }) }); await loadSelected(); flash("Image regeneration queued"); }
     catch (e) { setError(e instanceof Error ? e.message : "Regeneration failed"); }
+    finally { setLoading(false); }
+  }
+
+  async function openVideoPrompt(job: Job) {
+    setVideoPromptJobId(job.id);
+    setVideoPromptInfo(null);
+    setVideoPromptDraft("");
+    setPromptLoading(true);
+    setError("");
+    try {
+      const info = await api<VideoPromptInfo>(`/jobs/${job.id}/video-prompt`);
+      setVideoPromptInfo(info);
+      setVideoPromptDraft(info.prompt_used || info.default_prompt || "");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not load video prompt");
+      setVideoPromptJobId(null);
+    } finally { setPromptLoading(false); }
+  }
+
+  async function regenerateVideo(job: Job) {
+    const prompt = videoPromptDraft.trim();
+    if (!prompt) { setError("Video prompt cannot be empty."); return; }
+    setLoading(true); setError("");
+    try {
+      await api<Job>(`/jobs/${job.id}/regenerate-video`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt })
+      });
+      setVideoPromptJobId(null);
+      setVideoPromptInfo(null);
+      await loadSelected();
+      flash("Video regeneration queued with your changes");
+    } catch (e) { setError(e instanceof Error ? e.message : "Video regeneration failed"); }
     finally { setLoading(false); }
   }
 
@@ -303,11 +379,11 @@ export default function Home() {
 
         {(message || error) && <div className={error ? "toast error" : "toast"}>{error || message}</div>}
 
-        {showCreate && <div className="modalBackdrop"><div className="modal"><div className="modalHead"><h2>Create production batch</h2><button className="iconBtn" onClick={() => setShowCreate(false)}>×</button></div><div className="formGrid">
+        {showCreate && <div className="modalBackdrop"><div className="modal batchSettingsModal"><div className="modalHead"><div><h2>Create production batch</h2><p className="modalSub">Pick one or several backgrounds and motion styles. If you select several, products rotate through them automatically.</p></div><button className="iconBtn" onClick={() => setShowCreate(false)}>×</button></div><div className="formGrid">
           <label>Batch name<input value={name} onChange={e => setName(e.target.value)} /></label>
-          <label>Scene<select value={scene} onChange={e => setScene(e.target.value)}>{scenes.map(x => <option key={x}>{x}</option>)}</select></label>
           <label>Creator<select value={profile} onChange={e => setProfile(e.target.value)}>{profiles.map(x => <option key={x}>{x}</option>)}</select></label>
-          <label>Video style<select value={videoStyle} onChange={e => setVideoStyle(e.target.value)}>{styles.map(x => <option key={x}>{x}</option>)}</select></label>
+          <div className="wide settingBlock"><div className="settingLabel"><b>Backgrounds</b><span>{scenePool.length > 1 ? `Rotate ${scenePool.length} settings across the batch` : "Same setting for every product"}</span></div><div className="choiceChips">{scenes.map(x => <button type="button" key={x} className={scenePool.includes(x) ? "choiceChip selected" : "choiceChip"} onClick={() => togglePool(x, scenePool, setScenePool)}>{x}</button>)}</div></div>
+          <div className="wide settingBlock"><div className="settingLabel"><b>Motion styles</b><span>{motionPool.length > 1 ? `Rotate ${motionPool.length} motion styles across the batch` : "Same motion style for every product"}</span></div><div className="choiceChips">{styles.map(x => <button type="button" key={x} className={motionPool.includes(x) ? "choiceChip selected" : "choiceChip"} onClick={() => togglePool(x, motionPool, setMotionPool)}>{x}</button>)}</div></div>
           <label className="wide">Avatar / creator reference<input type="file" accept="image/*" onChange={onAvatar} /></label>
           <label className="check wide"><input type="checkbox" checked={autoApprove} onChange={e => setAutoApprove(e.target.checked)} /> Auto-approve images and continue to video</label>
         </div><div className="modalFoot"><button className="ghost" onClick={() => setShowCreate(false)}>Cancel</button><button className="primary" disabled={loading} onClick={createBatch}>{loading ? "Creating…" : "Create batch"}</button></div></div></div>}
@@ -315,6 +391,11 @@ export default function Home() {
         {photoJob && <div className="modalBackdrop"><div className="modal photoModal">
           <div className="modalHead"><div><h2>Select product photos</h2><p className="modalSub">{photoJob.product_name || "Imported product"}</p></div><button className="iconBtn" onClick={() => setPhotoJobId(null)}>×</button></div>
           <div className="photoPickerTop"><div><b>{refsFor(photoJob).length} selected</b><span>Choose 1–5 images that show the exact product most clearly. Listing and review photos can be mixed.</span></div><button className="ghost small" onClick={() => setRefPick(prev => ({ ...prev, [photoJob.id]: [] }))}>Clear</button></div>
+          <div className="preGenSettings"><div className="preGenHead"><b>Generation settings</b><span>Set these before generating. Product type controls framing; background controls the image; motion controls the video.</span></div><div className="preGenGrid">
+            <label>Product type <span className="detectedTag">Detected: {productTypeLabel(photoJob.focus)}</span><select value={settingsFor(photoJob).focus} onChange={e => setJobSettings(prev => ({ ...prev, [photoJob.id]: { ...settingsFor(photoJob), focus: e.target.value } }))}>{productTypes.map(x => <option key={x.value} value={x.value}>{x.label}</option>)}</select></label>
+            <label>Background<select value={settingsFor(photoJob).scene} onChange={e => setJobSettings(prev => ({ ...prev, [photoJob.id]: { ...settingsFor(photoJob), scene: e.target.value } }))}>{scenes.map(x => <option key={x}>{x}</option>)}</select></label>
+            <label>Motion style<select value={settingsFor(photoJob).motion_style} onChange={e => setJobSettings(prev => ({ ...prev, [photoJob.id]: { ...settingsFor(photoJob), motion_style: e.target.value } }))}>{styles.map(x => <option key={x}>{x}</option>)}</select></label>
+          </div></div>
           <div className="photoSections">
             <div><div className="photoSectionTitle">Listing photos <span>{photoJob.listing_images?.length || 0}</span></div><div className="photoGrid">{(photoJob.listing_images || []).map((url, i) => { const picked = refsFor(photoJob).includes(url); const order = refsFor(photoJob).indexOf(url) + 1; return <button type="button" className={`photoThumb ${picked ? "picked" : ""}`} key={`listing-${i}-${url}`} onClick={() => toggleRef(photoJob, url)}><img src={url} alt={`Listing product ${i + 1}`} /><span>{picked ? order : "+"}</span></button>; })}{!(photoJob.listing_images || []).length && <div className="muted pad">No listing photos returned.</div>}</div></div>
             <div><div className="photoSectionTitle">Review photos <span>{photoJob.review_images?.length || 0}</span></div><div className="photoGrid">{(photoJob.review_images || []).map((url, i) => { const picked = refsFor(photoJob).includes(url); const order = refsFor(photoJob).indexOf(url) + 1; return <button type="button" className={`photoThumb ${picked ? "picked" : ""}`} key={`review-${i}-${url}`} onClick={() => toggleRef(photoJob, url)}><img src={url} alt={`Review product ${i + 1}`} /><span>{picked ? order : "+"}</span></button>; })}{!(photoJob.review_images || []).length && <div className="muted pad">No review photos returned.</div>}</div></div>
@@ -330,6 +411,16 @@ export default function Home() {
           </div>
         </div>}
 
+        {videoPromptJobId && <div className="modalBackdrop" onClick={() => setVideoPromptJobId(null)}><div className="modal videoPromptModal" onClick={e => e.stopPropagation()}>
+          <div className="modalHead"><div><h2>Video prompt</h2><p className="modalSub">{videoPromptJob?.product_name || "Product video"}</p></div><button className="iconBtn" onClick={() => setVideoPromptJobId(null)}>×</button></div>
+          {promptLoading ? <div className="promptLoading">Loading prompt…</div> : videoPromptInfo && <>
+            <div className="promptMeta"><span>{videoPromptInfo.source === "last_used" ? "Prompt used for the current video" : "Default prompt for this product"}</span><button className="ghost small" onClick={() => setVideoPromptDraft(videoPromptInfo.default_prompt)}>Reset to default</button></div>
+            <textarea className="videoPromptEditor" value={videoPromptDraft} onChange={e => setVideoPromptDraft(e.target.value)} spellCheck={false} />
+            <div className="promptHelp">Edit anything you want — movement, pacing, turns, product focus, hand motion, etc. Regenerate uses this exact prompt while keeping the approved image as the start frame.</div>
+            <div className="modalFoot videoPromptFoot"><div className="promptFootLeft"><button className="ghost" onClick={() => navigator.clipboard?.writeText(videoPromptDraft)}>Copy prompt</button></div><div><button className="ghost" onClick={() => setVideoPromptJobId(null)}>Close</button><button className="primary" disabled={loading || !videoPromptInfo.can_regenerate || !videoPromptDraft.trim()} onClick={() => videoPromptJob && regenerateVideo(videoPromptJob)}>{loading ? "Queueing…" : "Regenerate video with changes"}</button></div></div>
+          </>}
+        </div></div>}
+
         {!selected ? <div className="empty"><h2>Create your first batch</h2><p>Your Railway worker is ready. Create a batch and send products into the production queue.</p><button className="primary" onClick={() => setShowCreate(true)}>Create batch</button></div> : <>
           <section className="metrics">{metrics.map(([label, value]) => <div className="metric" key={String(label)}><span>{label}</span><b>{value}</b></div>)}</section>
 
@@ -338,12 +429,12 @@ export default function Home() {
               <div className="scannerList">{scanner.slice(0, 12).map((row, idx) => { const n = Number(row._row_num || 0); const title = String(row["Product Name"] || row["Product"] || `Scanner product ${idx + 1}`); const selectedRow = scannerPick.has(n); return <label className={`scannerRow ${selectedRow ? "picked" : ""}`} key={`${n}-${idx}`}><input type="checkbox" checked={selectedRow} onChange={() => setScannerPick(prev => { const next = new Set(prev); selectedRow ? next.delete(n) : next.add(n); return next; })} /><div><b>{title}</b><span>{String(row["Creators"] || "")}</span></div></label>; })}{!scanner.length && <div className="muted pad">No pending scanner products.</div>}</div>
               <button className="primary full" disabled={!scannerPick.size || loading} onClick={importScanner}>Import selected ({scannerPick.size})</button>
             </div>
-            <div className="panel"><div className="panelHead"><div><h3>Import product links</h3><p>Paste one TikTok Shop product URL per line.</p></div></div><textarea className="linkBox" value={links} onChange={e => setLinks(e.target.value)} placeholder="https://www.tiktok.com/view/product/..." /><button className="primary full" disabled={!links.trim() || loading} onClick={importLinks}>Import products</button><div className="miniInfo"><b>Current batch</b><span>{selected.scene} · {selected.creator_profile} · {selected.video_style}</span></div></div>
+            <div className="panel"><div className="panelHead"><div><h3>Import product links</h3><p>Paste one TikTok Shop product URL per line.</p></div></div><textarea className="linkBox" value={links} onChange={e => setLinks(e.target.value)} placeholder="https://www.tiktok.com/view/product/..." /><button className="primary full" disabled={!links.trim() || loading} onClick={importLinks}>Import products</button><div className="miniInfo"><b>Current batch</b><span>{selected.creator_profile} · {(selected.scene_pool?.length || 1)} background{(selected.scene_pool?.length || 1) === 1 ? "" : "s"} · {(selected.motion_pool?.length || 1)} motion style{(selected.motion_pool?.length || 1) === 1 ? "" : "s"}</span></div></div>
           </section>
 
           <section className="panel production"><div className="panelHead"><div><h3>Production queue</h3><p>Auto-refreshes every 5 seconds. The Railway worker keeps processing even if this page is closed.</p></div><span className="liveDot">LIVE</span></div>
-            <div className="jobGrid">{selected.jobs.map(job => <article className="jobCard" key={job.id}><div className="media">{job.image_url ? <button type="button" className="generatedImageButton" title="Click to review larger" onClick={() => setPreviewImage({ url: job.image_url!, title: job.product_name || "Generated try-on", jobId: job.id })}><img src={job.image_url} alt={job.product_name || "Generated try-on"} /><span className="zoomHint">⌕ View larger</span></button> : <div className="mediaPlaceholder"><span>{stageLabel(job.stage)}</span></div>}<div className="stageBadge">{stageLabel(job.stage)}</div></div><div className="jobBody"><h4>{job.product_name || "Importing product…"}</h4><div className="jobMeta"><span>Image: {job.image_status}</span><span>Video: {job.video_status}</span><span>1080p: {job.upscale_status}</span></div>{job.error && <div className="jobError">{job.error}</div>}
-              <div className="jobActions">{job.stage === "imported" && <button className="primary small" disabled={loading} onClick={() => openPhotoPicker(job)}>Select product photos</button>}{job.image_status === "completed" && !job.approved && <button className="primary small" disabled={loading} onClick={() => approve(job)}>Approve + video</button>}{job.stage === "failed" && <button className="dangerGhost small" disabled={loading} onClick={() => retry(job)}>Retry</button>}{job.video_url && <a className="ghost small linkBtn" href={job.video_url} target="_blank" rel="noreferrer">Open video</a>}{job.drive_video_url && <a className="ghost small linkBtn" href={job.drive_video_url} target="_blank" rel="noreferrer">Drive</a>}</div>
+            <div className="jobGrid">{selected.jobs.map(job => <article className="jobCard" key={job.id}><div className="media">{job.image_url ? <button type="button" className="generatedImageButton" title="Click to review larger" onClick={() => setPreviewImage({ url: job.image_url!, title: job.product_name || "Generated try-on", jobId: job.id })}><img src={job.image_url} alt={job.product_name || "Generated try-on"} /><span className="zoomHint">⌕ View larger</span></button> : <div className="mediaPlaceholder"><span>{stageLabel(job.stage)}</span></div>}<div className="stageBadge">{stageLabel(job.stage)}</div></div><div className="jobBody"><h4>{job.product_name || "Importing product…"}</h4><div className="productionBadges"><span>{productTypeLabel(job.focus)}</span><span>{job.scene || selected.scene || "Background"}</span><span>{job.motion_style || selected.video_style || "Motion"}</span></div><div className="jobMeta"><span>Image: {job.image_status}</span><span>Video: {job.video_status}</span><span>1080p: {job.upscale_status}</span></div>{job.error && <div className="jobError">{job.error}</div>}
+              <div className="jobActions">{job.stage === "imported" && <button className="primary small" disabled={loading} onClick={() => openPhotoPicker(job)}>Select product photos</button>}{job.image_status === "completed" && !job.approved && <button className="primary small" disabled={loading} onClick={() => approve(job)}>Approve + video</button>}{job.image_status === "completed" && <button className="ghost small" disabled={loading} onClick={() => openVideoPrompt(job)}>Video prompt</button>}{job.stage === "failed" && <button className="dangerGhost small" disabled={loading} onClick={() => retry(job)}>Retry</button>}{job.video_url && <a className="ghost small linkBtn" href={job.video_url} target="_blank" rel="noreferrer">Open video</a>}{job.drive_video_url && <a className="ghost small linkBtn" href={job.drive_video_url} target="_blank" rel="noreferrer">Drive</a>}</div>
               {job.image_status === "completed" && !job.approved && <div className="regenBox"><input placeholder="Regenerate instruction…" value={regen[job.id] || ""} onChange={e => setRegen({ ...regen, [job.id]: e.target.value })} /><button className="ghost small" disabled={loading} onClick={() => regenerate(job)}>Regenerate</button></div>}
             </div></article>)}{!selected.jobs.length && <div className="muted pad">No products in this batch yet.</div>}</div>
           </section>
