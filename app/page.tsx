@@ -2,6 +2,8 @@
 
 import { ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
 
+type EditorialShot = { shot: string; role?: string; image_status?: string; image_media_id?: string; image_url?: string; image_error?: string; video_status?: string; video_job_id?: string; video_media_id?: string; video_url?: string; video_error?: string; upscale_status?: string; upscale_job_id?: string; upscaled_media_id?: string; upscaled_url?: string; upscale_error?: string; prompt_used?: string; };
+
 type Job = {
   id: string;
   batch_id: string;
@@ -14,6 +16,7 @@ type Job = {
   listing_images?: string[];
   review_images?: string[];
   selected_refs?: string[];
+  editorial_shots?: EditorialShot[];
   stage: string;
   approved: boolean;
   image_status: string;
@@ -72,7 +75,7 @@ type SavedAvatar = {
 };
 
 const SHOE_SCENE = "Dark luxury car interior";
-const SHOE_MOTION = "Shoe Showcase — ASMR Rotation";
+const SHOE_MOTION = "Shoe Showcase — Editorial Cut";
 const scenes = ["Modern apartment mirror", "Walk-in closet", "Luxury bathroom mirror", "Penthouse at night", "Casual bedroom mirror", "Modern hotel room mirror", "Warm living room mirror", "Apartment entryway mirror"];
 const profiles = ["Male", "Female"];
 const maleAcademyStyles = ["Academy — Boss / Calm", "Academy — High-Energy", "Academy — Rapid-Fire / Flashy"];
@@ -252,7 +255,7 @@ export default function Home() {
           creator_profile: profile,
           video_style: shoeMode ? SHOE_MOTION : motionPool[0],
           motion_pool: shoeMode ? [SHOE_MOTION] : motionPool,
-          auto_approve: autoApprove,
+          auto_approve: shoeMode ? false : autoApprove,
           avatar_b64: shoeMode ? null : avatarB64,
           avatar_mime: avatarMime
         })
@@ -404,6 +407,51 @@ export default function Home() {
     finally { setLoading(false); }
   }
 
+  function editorialFramesReady(job: Job) {
+    const shots = job.editorial_shots || [];
+    return shots.length === 3 && shots.every(s => s.image_status === "completed" && !!s.image_url);
+  }
+
+  async function regenerateEditorialFrame(job: Job, shot: string) {
+    setLoading(true); setError("");
+    try {
+      await api<Job>(`/jobs/${job.id}/editorial/frames/${shot}/regenerate`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ instruction: "" })
+      });
+      await loadSelected(); flash(`Editorial frame ${shot} regeneration queued`);
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not regenerate editorial frame"); }
+    finally { setLoading(false); }
+  }
+
+  async function generateEditorialVideo(job: Job) {
+    setLoading(true); setError("");
+    try {
+      await api<Job>(`/jobs/${job.id}/editorial/generate-video`, { method: "POST" });
+      await loadSelected(); flash("Editorial clips queued — FFmpeg will stitch them automatically");
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not generate editorial video"); }
+    finally { setLoading(false); }
+  }
+
+  async function regenerateEditorialClip(job: Job, shot: string) {
+    setLoading(true); setError("");
+    try {
+      await api<Job>(`/jobs/${job.id}/editorial/clips/${shot}/regenerate`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt: "" })
+      });
+      await loadSelected(); flash(`Editorial clip ${shot} regeneration queued`);
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not regenerate editorial clip"); }
+    finally { setLoading(false); }
+  }
+
+  async function rebuildEditorialVideo(job: Job) {
+    setLoading(true); setError("");
+    try {
+      await api<Job>(`/jobs/${job.id}/editorial/rebuild`, { method: "POST" });
+      await loadSelected(); flash("Editorial cut rebuild queued");
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not rebuild editorial cut"); }
+    finally { setLoading(false); }
+  }
+
   async function openVideoPrompt(job: Job) {
     setVideoPromptJobId(job.id);
     setVideoPromptInfo(null);
@@ -450,15 +498,22 @@ export default function Home() {
 
   async function generateAllVideos() {
     if (!selectedId || !selected) return;
-    const candidates = selected.jobs.filter(j => j.image_status === "completed" && (j.video_status === "pending" || !j.video_status) && j.upscale_status !== "completed");
-    if (!candidates.length) { setError("No completed images are waiting for video generation."); return; }
-    if (!window.confirm(`Generate videos for ${candidates.length} completed image${candidates.length === 1 ? "" : "s"}? This approves those images and sends them to Omni.`)) return;
+    const shoeMode = selected.mode === "shoe_showcase";
+    const candidates = selected.jobs.filter(j => shoeMode
+      ? editorialFramesReady(j) && j.video_status !== "completed" && j.stage !== "editorial_clips_processing" && j.stage !== "editorial_upscaling" && j.stage !== "stitching_editorial_video"
+      : j.image_status === "completed" && (j.video_status === "pending" || !j.video_status) && j.upscale_status !== "completed"
+    );
+    if (!candidates.length) { setError(shoeMode ? "No completed editorial frame sets are waiting for video generation." : "No completed images are waiting for video generation."); return; }
+    if (!window.confirm(shoeMode
+      ? `Generate 3 editorial clips for ${candidates.length} shoe${candidates.length === 1 ? "" : "s"} and stitch each final cut?`
+      : `Generate videos for ${candidates.length} completed image${candidates.length === 1 ? "" : "s"}? This approves those images and sends them to Omni.`
+    )) return;
     setLoading(true); setError("");
     try {
       const batch = await api<Batch>(`/batches/${selectedId}/generate-videos`, { method: "POST" });
       setSelected(batch);
       setBatches(prev => prev.map(b => b.id === batch.id ? batch : b));
-      flash(`${candidates.length} video${candidates.length === 1 ? "" : "s"} queued`);
+      flash(shoeMode ? `${candidates.length} editorial shoe video${candidates.length === 1 ? "" : "s"} queued` : `${candidates.length} video${candidates.length === 1 ? "" : "s"} queued`);
     } catch (e) { setError(e instanceof Error ? e.message : "Could not generate all videos"); }
     finally { setLoading(false); }
   }
@@ -554,12 +609,12 @@ export default function Home() {
         {showCreate && <div className="modalBackdrop"><div className="modal batchSettingsModal"><div className="modalHead"><div><h2>Create production batch</h2><p className="modalSub">Choose the workflow first. Shoe Showcase uses the exact dark-car, hands-only reference style and does not use an avatar.</p></div><button className="iconBtn" onClick={() => setShowCreate(false)}>×</button></div><div className="formGrid">
           <div className="wide settingBlock"><div className="settingLabel"><b>Workflow</b><span>These are separate generation pipelines.</span></div><div className="modeChoiceGrid">
             <button type="button" className={batchMode === "fashion_tryon" ? "modeChoice selected" : "modeChoice"} onClick={() => { setBatchMode("fashion_tryon"); if (name === "Today's Shoe Showcase") setName("Today's Fashion Batch"); }}><b>Fashion Try-On</b><span>Avatar mirror try-ons for outfits, tops, bottoms, bags and worn shoes.</span></button>
-            <button type="button" className={batchMode === "shoe_showcase" ? "modeChoice selected" : "modeChoice"} onClick={() => { setBatchMode("shoe_showcase"); if (name === "Today's Fashion Batch") setName("Today's Shoe Showcase"); setProfile("Female"); }}><b>Shoe Showcase</b><span>Dark luxury car · hand-held shoe · slow ASMR rotation · 10 seconds.</span></button>
+            <button type="button" className={batchMode === "shoe_showcase" ? "modeChoice selected" : "modeChoice"} onClick={() => { setBatchMode("shoe_showcase"); if (name === "Today's Fashion Batch") setName("Today's Shoe Showcase"); setProfile("Female"); }}><b>Shoe Showcase</b><span>Dark luxury car · 3 reviewed start frames · 3 Omni clips · FFmpeg editorial cut.</span></button>
           </div></div>
           <label>Batch name<input value={name} onChange={e => setName(e.target.value)} /></label>
           <label>{batchMode === "shoe_showcase" ? "Hand style" : "Creator"}<select value={profile} onChange={e => changeProfile(e.target.value)}>{profiles.map(x => <option key={x}>{x}</option>)}</select></label>
           {batchMode === "shoe_showcase" ? <>
-            <div className="wide shoeLockedPanel"><div><b>Shoe Showcase defaults</b><span>Locked to the reference-video style you supplied.</span></div><div className="shoeRuleGrid"><span>Dark luxury car</span><span>Hands / forearm only</span><span>Close-up shoe hero</span><span>Slow rotation</span><span>Silent</span><span>10 sec · 9:16</span><span>No cuts</span><span>No rendered text</span></div></div>
+            <div className="wide shoeLockedPanel"><div><b>Shoe Showcase defaults</b><span>Locked to the reference-video style you supplied.</span></div><div className="shoeRuleGrid"><span>Dark luxury car</span><span>Hand / foot / lower leg only</span><span>Close-up shoe hero</span><span>3 start frames</span><span>3 × 4s Omni clips</span><span>FFmpeg hard cuts</span><span>~10 sec final</span><span>Silent</span><span>No rendered text</span></div></div>
           </> : <>
             <div className="wide settingBlock"><div className="settingLabel"><b>Backgrounds</b><span>{scenePool.length > 1 ? `Rotate ${scenePool.length} settings across the batch` : "Same setting for every product"}</span></div><div className="choiceChips">{scenes.map(x => <button type="button" key={x} className={scenePool.includes(x) ? "choiceChip selected" : "choiceChip"} onClick={() => togglePool(x, scenePool, setScenePool)}>{x}</button>)}</div></div>
             <div className="wide settingBlock"><div className="settingLabel"><b>Motion styles</b><span>{motionPool.length > 1 ? `Rotate ${motionPool.length} motion styles across the batch` : "Same motion style for every product"}</span></div><div className="motionGroupLabel">Academy presets · recommended · matched to {profile.toLowerCase()} creator</div><div className="choiceChips">{academyStylesFor(profile).map(x => <button type="button" key={x} className={motionPool.includes(x) ? "choiceChip selected" : "choiceChip"} onClick={() => togglePool(x, motionPool, setMotionPool)}>{x}</button>)}</div><div className="motionGroupLabel customLabel">Custom extras</div><div className="choiceChips">{customStyles.map(x => <button type="button" key={x} className={motionPool.includes(x) ? "choiceChip selected" : "choiceChip"} onClick={() => togglePool(x, motionPool, setMotionPool)}>{x}</button>)}</div><div className="motionNote">Academy presets follow your existing try-on workflow.</div></div>
@@ -569,13 +624,13 @@ export default function Home() {
               {avatarB64 && <div className="avatarSelected"><img src={`data:${avatarMime};base64,${avatarB64}`} alt="Selected avatar" /><div><b>{avatarName || "Selected avatar"}</b><span>{selectedAvatarId ? "Saved avatar selected" : "Uploaded — save it to reuse later"}</span></div></div>}
             </div>
           </>}
-          <label className="check wide"><input type="checkbox" checked={autoApprove} onChange={e => setAutoApprove(e.target.checked)} /> Auto-approve images and continue to video</label>
+          {batchMode === "fashion_tryon" && <label className="check wide"><input type="checkbox" checked={autoApprove} onChange={e => setAutoApprove(e.target.checked)} /> Auto-approve images and continue to video</label>}
         </div><div className="modalFoot"><button className="ghost" onClick={() => setShowCreate(false)}>Cancel</button><button className="primary" disabled={loading || (batchMode === "fashion_tryon" && !avatarB64)} onClick={createBatch}>{loading ? "Creating…" : batchMode === "shoe_showcase" ? "Create Shoe Showcase" : "Create batch"}</button></div></div></div>}
 
         {photoJob && <div className="modalBackdrop"><div className="modal photoModal">
           <div className="modalHead"><div><h2>Select product photos</h2><p className="modalSub">{photoJob.product_name || "Imported product"}</p></div><button className="iconBtn" onClick={() => setPhotoJobId(null)}>×</button></div>
           <div className="photoPickerTop"><div><b>{refsFor(photoJob).length} selected</b><span>{selected?.mode === "shoe_showcase" ? "Choose 1–5 images that show the exact shoe, colorway, sole, side profile and details clearly." : "Choose 1–5 images that show the exact product most clearly. Listing and review photos can be mixed."}</span></div><button className="ghost small" onClick={() => setRefPick(prev => ({ ...prev, [photoJob.id]: [] }))}>Clear</button></div>
-          {selected?.mode === "shoe_showcase" ? <div className="preGenSettings shoePreGen"><div className="preGenHead"><b>Shoe Showcase</b><span>This item will use the dark-car shoe workflow from your reference videos and MD skill.</span></div><div className="shoeRuleGrid"><span>Shoe only</span><span>{selected.creator_profile || "Female"} hand</span><span>Dark luxury car</span><span>ASMR rotation</span><span>10 seconds</span><span>No face / no text</span></div></div> : <div className="preGenSettings"><div className="preGenHead"><b>Generation settings</b><span>Set these before generating. Product type controls framing; background controls the image; motion controls the video.</span></div><div className="preGenGrid">
+          {selected?.mode === "shoe_showcase" ? <div className="preGenSettings shoePreGen"><div className="preGenHead"><b>Shoe Showcase</b><span>This item will use the dark-car shoe workflow from your reference videos and MD skill.</span></div><div className="shoeRuleGrid"><span>Shoe only</span><span>{selected.creator_profile || "Female"} hand</span><span>Dark luxury car</span><span>3 editorial frames</span><span>Exact start frames</span><span>FFmpeg cuts</span><span>No face / upper body / text</span></div></div> : <div className="preGenSettings"><div className="preGenHead"><b>Generation settings</b><span>Set these before generating. Product type controls framing; background controls the image; motion controls the video.</span></div><div className="preGenGrid">
             <label>Product type <span className="detectedTag">Detected: {productTypeLabel(photoJob.focus)}</span><select value={settingsFor(photoJob).focus} onChange={e => setJobSettings(prev => ({ ...prev, [photoJob.id]: { ...settingsFor(photoJob), focus: e.target.value } }))}>{productTypes.map(x => <option key={x.value} value={x.value}>{x.label}</option>)}</select></label>
             <label>Background<select value={settingsFor(photoJob).scene} onChange={e => setJobSettings(prev => ({ ...prev, [photoJob.id]: { ...settingsFor(photoJob), scene: e.target.value } }))}>{scenes.map(x => <option key={x}>{x}</option>)}</select></label>
             <label>Motion style<select value={settingsFor(photoJob).motion_style} onChange={e => setJobSettings(prev => ({ ...prev, [photoJob.id]: { ...settingsFor(photoJob), motion_style: e.target.value } }))}>{Array.from(new Set([settingsFor(photoJob).motion_style, ...motionStylesFor(selected?.creator_profile || "Male")])).map(x => <option key={x}>{x}</option>)}</select><span className="fieldHint">Academy presets use the PDF sequence; product-specific bag/shoe/fit logic is automatic.</span></label>
@@ -590,8 +645,8 @@ export default function Home() {
         {previewImage && <div className="imageLightboxBackdrop" onClick={() => setPreviewImage(null)}>
           <div className="imageLightbox" onClick={e => e.stopPropagation()}>
             <div className="imageLightboxHead"><div><b>Review generated image</b><span>{previewImage.title}</span></div><button className="iconBtn" onClick={() => setPreviewImage(null)}>×</button></div>
-            <div className="imageCompareCanvas"><div className="generatedCompare"><div className="compareLabel">Generated try-on</div><img src={previewImage.url} alt={previewImage.title} /></div><aside className="referenceCompare"><div className="compareLabel">Product photos used ({previewJob?.selected_refs?.length || 0})</div><p>Compare the generated item against the exact references sent to Flow.</p><div className="compareRefs">{(previewJob?.selected_refs || []).map((url, i) => <a href={url} target="_blank" rel="noreferrer" key={`${url}-${i}`}><img src={url} alt={`Product reference ${i + 1}`} /><span>Reference {i + 1}</span></a>)}</div></aside></div>
-            <div className="imageLightboxFoot"><span>Generated image + exact selected product references · press Esc or click outside to close.</span><div><a className="ghost linkBtn" href={previewImage.url} target="_blank" rel="noreferrer">Open generated original</a>{previewJob?.image_status === "completed" && !previewJob.approved && <button className="primary" disabled={loading} onClick={async () => { await approve(previewJob); setPreviewImage(null); }}>{loading ? "Queueing…" : "Approve + video"}</button>}</div></div>
+            <div className="imageCompareCanvas"><div className="generatedCompare"><div className="compareLabel">{selected?.mode === "shoe_showcase" ? "Editorial frame" : "Generated try-on"}</div><img src={previewImage.url} alt={previewImage.title} /></div><aside className="referenceCompare"><div className="compareLabel">Product photos used ({previewJob?.selected_refs?.length || 0})</div><p>Compare the generated item against the exact references sent to Flow.</p><div className="compareRefs">{(previewJob?.selected_refs || []).map((url, i) => <a href={url} target="_blank" rel="noreferrer" key={`${url}-${i}`}><img src={url} alt={`Product reference ${i + 1}`} /><span>Reference {i + 1}</span></a>)}</div></aside></div>
+            <div className="imageLightboxFoot"><span>Generated image + exact selected product references · press Esc or click outside to close.</span><div><a className="ghost linkBtn" href={previewImage.url} target="_blank" rel="noreferrer">Open generated original</a>{selected?.mode !== "shoe_showcase" && previewJob?.image_status === "completed" && !previewJob.approved && <button className="primary" disabled={loading} onClick={async () => { await approve(previewJob); setPreviewImage(null); }}>{loading ? "Queueing…" : "Approve + video"}</button>}</div></div>
           </div>
         </div>}
 
@@ -613,14 +668,72 @@ export default function Home() {
               <div className="scannerList">{scanner.slice(0, 12).map((row, idx) => { const n = Number(row._row_num || 0); const title = String(row["Product Name"] || row["Product"] || `Scanner product ${idx + 1}`); const selectedRow = scannerPick.has(n); return <label className={`scannerRow ${selectedRow ? "picked" : ""}`} key={`${n}-${idx}`}><input type="checkbox" checked={selectedRow} onChange={() => setScannerPick(prev => { const next = new Set(prev); selectedRow ? next.delete(n) : next.add(n); return next; })} /><div><b>{title}</b><span>{String(row["Creators"] || "")}</span></div></label>; })}{!scanner.length && <div className="muted pad">No pending scanner products.</div>}</div>
               <button className="primary full" disabled={!scannerPick.size || loading} onClick={importScanner}>Import selected ({scannerPick.size})</button>
             </div>
-            <div className="panel"><div className="panelHead"><div><h3>Import product links</h3><p>Paste one TikTok Shop product URL per line.</p></div></div><textarea className="linkBox" value={links} onChange={e => setLinks(e.target.value)} placeholder="https://www.tiktok.com/view/product/..." /><button className="primary full" disabled={!links.trim() || loading} onClick={importLinks}>Import products</button><div className="miniInfo"><b>Current batch</b><span>{selected.mode === "shoe_showcase" ? `${selected.creator_profile} hand · Dark luxury car · 10s ASMR rotation` : `${selected.creator_profile} · ${(selected.scene_pool?.length || 1)} background${(selected.scene_pool?.length || 1) === 1 ? "" : "s"} · ${(selected.motion_pool?.length || 1)} motion style${(selected.motion_pool?.length || 1) === 1 ? "" : "s"}`}</span></div></div>
+            <div className="panel"><div className="panelHead"><div><h3>Import product links</h3><p>Paste one TikTok Shop product URL per line.</p></div></div><textarea className="linkBox" value={links} onChange={e => setLinks(e.target.value)} placeholder="https://www.tiktok.com/view/product/..." /><button className="primary full" disabled={!links.trim() || loading} onClick={importLinks}>Import products</button><div className="miniInfo"><b>Current batch</b><span>{selected.mode === "shoe_showcase" ? `${selected.creator_profile} hand · Dark luxury car · 3-frame editorial cut` : `${selected.creator_profile} · ${(selected.scene_pool?.length || 1)} background${(selected.scene_pool?.length || 1) === 1 ? "" : "s"} · ${(selected.motion_pool?.length || 1)} motion style${(selected.motion_pool?.length || 1) === 1 ? "" : "s"}`}</span></div></div>
           </section>
 
-          <section className="panel production"><div className="panelHead productionHead"><div><h3>Production queue</h3><p>{selected.mode === "shoe_showcase" ? "Each shoe image starts automatically after you confirm its product photos. Review the stills, then generate the 10-second Omni showcase videos." : "Each image starts automatically after you confirm its product photos. The Railway worker keeps processing even if this page is closed."}</p></div><div className="bulkActions"><button className="ghost small bulkVideo" disabled={loading || !selected.jobs.some(j => j.image_status === "completed" && (j.video_status === "pending" || !j.video_status) && j.upscale_status !== "completed")} onClick={generateAllVideos}>Generate all videos</button><button className="primary small" disabled={!selected.jobs.some(j => !!(j.drive_video_download_url || j.video_url))} onClick={downloadAllVideos}>Download all videos</button><span className="liveDot">LIVE</span></div></div>
-            <div className="jobGrid">{selected.jobs.map(job => <article className="jobCard" key={job.id}><div className="media">{job.image_url ? <button type="button" className="generatedImageButton" title="Click to review larger" onClick={() => setPreviewImage({ url: job.image_url!, title: job.product_name || (selected.mode === "shoe_showcase" ? "Generated shoe showcase" : "Generated try-on"), jobId: job.id })}><img src={job.image_url} alt={job.product_name || (selected.mode === "shoe_showcase" ? "Generated shoe showcase" : "Generated try-on")} /><span className="zoomHint">⌕ View larger</span></button> : <div className="mediaPlaceholder"><span>{stageLabel(job.stage)}</span></div>}<div className="stageBadge">{stageLabel(job.stage)}</div></div><div className="jobBody"><h4>{job.product_name || "Importing product…"}</h4><div className="productionBadges"><span>{selected.mode === "shoe_showcase" ? "Shoes" : productTypeLabel(job.focus)}</span><span>{job.scene || selected.scene || "Background"}</span><span>{job.motion_style || selected.video_style || "Motion"}</span></div>{!!job.selected_refs?.length && <div className="usedRefs"><div className="usedRefsHead"><b>Product photos used</b><span>{job.selected_refs.length}</span></div><div className="usedRefStrip">{job.selected_refs.map((url, i) => <a href={url} target="_blank" rel="noreferrer" title={`Open product reference ${i + 1}`} key={`${job.id}-used-${i}`}><img src={url} alt={`Selected product reference ${i + 1}`} /><span>{i + 1}</span></a>)}</div></div>}<div className="jobMeta"><span>Image: {job.image_status}</span><span>Video: {job.video_status}</span><span>1080p: {job.upscale_status}</span></div>{job.error && <div className="jobError">{job.error}</div>}
-              <div className="jobActions">{job.stage === "imported" && <button className="primary small" disabled={loading} onClick={() => openPhotoPicker(job)}>Select product photos</button>}{job.stage === "ready_for_image" && <button className="primary small" disabled={loading} onClick={() => generateOneImage(job)}>Generate image</button>}{job.image_status === "completed" && !job.approved && <button className="primary small" disabled={loading} onClick={() => approve(job)}>Approve + video</button>}{job.image_status === "completed" && <button className="ghost small" disabled={loading} onClick={() => openVideoPrompt(job)}>Video prompt</button>}{job.stage === "failed" && <button className="dangerGhost small" disabled={loading} onClick={() => retry(job)}>Retry</button>}{job.video_url && <a className="ghost small linkBtn" href={job.video_url} target="_blank" rel="noreferrer">Open video</a>}{job.drive_video_url && <a className="ghost small linkBtn" href={job.drive_video_url} target="_blank" rel="noreferrer">Drive</a>}</div>
-              {job.image_status === "completed" && !job.approved && <div className="regenBox"><input placeholder="Regenerate instruction…" value={regen[job.id] || ""} onChange={e => setRegen({ ...regen, [job.id]: e.target.value })} /><button className="ghost small" disabled={loading} onClick={() => regenerate(job)}>Regenerate</button></div>}
-            </div></article>)}{!selected.jobs.length && <div className="muted pad">No products in this batch yet.</div>}</div>
+          <section className="panel production">
+            <div className="panelHead productionHead">
+              <div>
+                <h3>Production queue</h3>
+                <p>{selected.mode === "shoe_showcase" ? "Confirm shoe photos → 3 editorial stills generate automatically → review → 3 start-frame Omni clips → FFmpeg hard-cut final." : "Each image starts automatically after you confirm its product photos. The Railway worker keeps processing even if this page is closed."}</p>
+              </div>
+              <div className="bulkActions">
+                <button className="ghost small bulkVideo" disabled={loading || !selected.jobs.some(j => selected.mode === "shoe_showcase" ? editorialFramesReady(j) && j.video_status !== "completed" : j.image_status === "completed" && (j.video_status === "pending" || !j.video_status) && j.upscale_status !== "completed")} onClick={generateAllVideos}>{selected.mode === "shoe_showcase" ? "Generate all editorial videos" : "Generate all videos"}</button>
+                <button className="primary small" disabled={!selected.jobs.some(j => !!(j.drive_video_download_url || j.video_url))} onClick={downloadAllVideos}>Download all videos</button>
+                <span className="liveDot">LIVE</span>
+              </div>
+            </div>
+            <div className="jobGrid">
+              {selected.jobs.map(job => {
+                const shoeMode = selected.mode === "shoe_showcase";
+                const shots = job.editorial_shots || [];
+                const framesReady = editorialFramesReady(job);
+                const allClipsReady = shots.length === 3 && shots.every(s => s.upscale_status === "completed");
+                return <article className="jobCard" key={job.id}>
+                  <div className="media">
+                    {job.image_url ? <button type="button" className="generatedImageButton" title="Click to review larger" onClick={() => setPreviewImage({ url: job.image_url!, title: job.product_name || (shoeMode ? "Editorial opener" : "Generated try-on"), jobId: job.id })}><img src={job.image_url} alt={job.product_name || "Generated product"} /><span className="zoomHint">⌕ View larger</span></button> : <div className="mediaPlaceholder"><span>{stageLabel(job.stage)}</span></div>}
+                    <div className="stageBadge">{stageLabel(job.stage)}</div>
+                  </div>
+                  <div className="jobBody">
+                    <h4>{job.product_name || "Importing product…"}</h4>
+                    <div className="productionBadges"><span>{shoeMode ? "Shoes" : productTypeLabel(job.focus)}</span><span>{job.scene || selected.scene || "Background"}</span><span>{shoeMode ? "Editorial Cut" : job.motion_style || selected.video_style || "Motion"}</span></div>
+                    {!!job.selected_refs?.length && <div className="usedRefs"><div className="usedRefsHead"><b>Product photos used</b><span>{job.selected_refs.length}</span></div><div className="usedRefStrip">{job.selected_refs.map((url, i) => <a href={url} target="_blank" rel="noreferrer" title={`Open product reference ${i + 1}`} key={`${job.id}-used-${i}`}><img src={url} alt={`Selected product reference ${i + 1}`} /><span>{i + 1}</span></a>)}</div></div>}
+
+                    {shoeMode && !!shots.length && <div className="editorialPanel">
+                      <div className="editorialHead"><b>Editorial frames</b><span>A opener · B on-foot · C detail/hero</span></div>
+                      <div className="editorialGrid">
+                        {shots.map(s => <div className="editorialShot" key={`${job.id}-${s.shot}`}>
+                          <div className="editorialShotTop"><b>{s.shot} · {s.role || "shot"}</b><span className={`editorialState ${s.image_status || "pending"}`}>{s.image_status || "pending"}</span></div>
+                          {s.image_url ? <button type="button" className="editorialImage" onClick={() => setPreviewImage({ url: s.image_url!, title: `${job.product_name || "Shoe"} · Frame ${s.shot}`, jobId: job.id })}><img src={s.image_url} alt={`Editorial frame ${s.shot}`} /></button> : <div className="editorialPlaceholder">{stageLabel(s.image_status || "pending")}</div>}
+                          {s.image_error && <div className="miniError">{s.image_error}</div>}
+                          <div className="editorialClipMeta"><span>Clip: {s.video_status || "pending"}</span><span>1080p: {s.upscale_status || "pending"}</span></div>
+                          <div className="editorialShotActions">
+                            <button className="ghost tiny" disabled={loading || s.image_status === "processing"} onClick={() => regenerateEditorialFrame(job, s.shot)}>Regenerate frame</button>
+                            {s.video_status === "completed" && <button className="ghost tiny" disabled={loading} onClick={() => regenerateEditorialClip(job, s.shot)}>Regenerate clip</button>}
+                          </div>
+                        </div>)}
+                      </div>
+                      {framesReady && <button className="primary full editorialGenerate" disabled={loading || ["editorial_clips_queued","editorial_clips_processing","editorial_upscaling","stitching_editorial_video"].includes(job.stage)} onClick={() => generateEditorialVideo(job)}>{job.video_status === "completed" ? "Regenerate full editorial video" : "Generate Editorial Video"}</button>}
+                      {allClipsReady && job.video_status !== "processing" && <button className="ghost full" disabled={loading} onClick={() => rebuildEditorialVideo(job)}>Rebuild FFmpeg cut</button>}
+                    </div>}
+
+                    <div className="jobMeta"><span>Image: {job.image_status}</span><span>Video: {job.video_status}</span><span>1080p: {job.upscale_status}</span></div>
+                    {job.error && <div className="jobError">{job.error}</div>}
+                    <div className="jobActions">
+                      {job.stage === "imported" && <button className="primary small" disabled={loading} onClick={() => openPhotoPicker(job)}>Select product photos</button>}
+                      {job.stage === "ready_for_image" && <button className="primary small" disabled={loading} onClick={() => generateOneImage(job)}>{shoeMode ? "Generate editorial frames" : "Generate image"}</button>}
+                      {!shoeMode && job.image_status === "completed" && !job.approved && <button className="primary small" disabled={loading} onClick={() => approve(job)}>Approve + video</button>}
+                      {!shoeMode && job.image_status === "completed" && <button className="ghost small" disabled={loading} onClick={() => openVideoPrompt(job)}>Video prompt</button>}
+                      {job.stage === "failed" && <button className="dangerGhost small" disabled={loading} onClick={() => retry(job)}>Retry</button>}
+                      {job.video_url && <a className="ghost small linkBtn" href={job.video_url} target="_blank" rel="noreferrer">Open final video</a>}
+                      {job.drive_video_url && <a className="ghost small linkBtn" href={job.drive_video_url} target="_blank" rel="noreferrer">Drive</a>}
+                    </div>
+                    {!shoeMode && job.image_status === "completed" && !job.approved && <div className="regenBox"><input placeholder="Regenerate instruction…" value={regen[job.id] || ""} onChange={e => setRegen({ ...regen, [job.id]: e.target.value })} /><button className="ghost small" disabled={loading} onClick={() => regenerate(job)}>Regenerate</button></div>}
+                  </div>
+                </article>;
+              })}
+              {!selected.jobs.length && <div className="muted pad">No products in this batch yet.</div>}
+            </div>
           </section>
         </>}
       </section>
