@@ -94,6 +94,7 @@ export default function Home() {
   const [regen, setRegen] = useState<Record<string, string>>({});
   const [photoJobId, setPhotoJobId] = useState<string | null>(null);
   const [refPick, setRefPick] = useState<Record<string, string[]>>({});
+  const [previewImage, setPreviewImage] = useState<{ url: string; title: string; jobId: string } | null>(null);
 
   const loadHealth = useCallback(async () => {
     try { setHealth(await api<Health>("/health")); } catch (e) { setError(e instanceof Error ? e.message : "Health check failed"); }
@@ -127,6 +128,14 @@ export default function Home() {
     const imported = selected.jobs.find(j => j.stage === "imported" && !j.image_url);
     if (imported) setPhotoJobId(imported.id);
   }, [selected, photoJobId]);
+  useEffect(() => {
+    if (!previewImage) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setPreviewImage(null); };
+    document.addEventListener("keydown", onKey);
+    const oldOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = oldOverflow; };
+  }, [previewImage]);
 
   const counts = selected?.counts || {};
   const metrics = useMemo(() => [
@@ -139,6 +148,7 @@ export default function Home() {
   ], [counts]);
 
   const photoJob = photoJobId ? selected?.jobs.find(j => j.id === photoJobId) || null : null;
+  const previewJob = previewImage ? selected?.jobs.find(j => j.id === previewImage.jobId) || null : null;
 
   function flash(msg: string) { setMessage(msg); setError(""); setTimeout(() => setMessage(""), 3500); }
 
@@ -246,6 +256,17 @@ export default function Home() {
     finally { setLoading(false); }
   }
 
+  async function syncSheet() {
+    if (!selectedId) return;
+    setLoading(true); setError("");
+    try {
+      await api<Batch>(`/batches/${selectedId}/sync-sheet`, { method: "POST" });
+      await loadSelected();
+      flash("Google Sheet sync queued for this batch");
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not sync Google Sheet"); }
+    finally { setLoading(false); }
+  }
+
   async function retryFailed() {
     if (!selectedId) return;
     setLoading(true); setError("");
@@ -269,6 +290,7 @@ export default function Home() {
           <div><span className={pillClass(Boolean(health?.ok))}></span> Railway API</div>
           <div><span className={pillClass(Boolean(health?.useapi))}></span> useapi</div>
           <div><span className={pillClass(Boolean(health?.sociavault))}></span> SociaVault</div>
+          <div><span className={pillClass(Boolean(health?.google_sheet))}></span> Google Sheets</div>
           <div><span className={pillClass(Boolean(health?.drive_archive))}></span> Drive archive</div>
         </div>
       </aside>
@@ -276,7 +298,7 @@ export default function Home() {
       <section className="content">
         <header className="topbar">
           <div><div className="eyebrow">AI FASHION PRODUCTION</div><h1>{selected?.name || "Production Dashboard"}</h1><p>{health ? `${health.image_model} → ${health.video_model} → ${health.video_final_resolution}` : "Connecting to backend…"}</p></div>
-          <div className="topActions"><button className="ghost" onClick={() => { void loadBatches(); void loadSelected(); void loadScanner(); }}>Refresh</button><button className="dangerGhost" disabled={!selectedId || loading} onClick={retryFailed}>Retry failed</button></div>
+          <div className="topActions"><button className="ghost" onClick={() => { void loadBatches(); void loadSelected(); void loadScanner(); }}>Refresh</button><button className="ghost" disabled={!selectedId || loading || !health?.google_sheet} onClick={syncSheet}>Sync Sheet</button><button className="dangerGhost" disabled={!selectedId || loading} onClick={retryFailed}>Retry failed</button></div>
         </header>
 
         {(message || error) && <div className={error ? "toast error" : "toast"}>{error || message}</div>}
@@ -300,6 +322,14 @@ export default function Home() {
           <div className="modalFoot photoFoot"><span className="muted">Nothing generates until you press Generate try-on.</span><div><button className="ghost" onClick={() => setPhotoJobId(null)}>Cancel</button><button className="primary" disabled={loading || !refsFor(photoJob).length} onClick={() => startImageWithRefs(photoJob)}>{loading ? "Queueing…" : `Generate try-on (${refsFor(photoJob).length})`}</button></div></div>
         </div></div>}
 
+        {previewImage && <div className="imageLightboxBackdrop" onClick={() => setPreviewImage(null)}>
+          <div className="imageLightbox" onClick={e => e.stopPropagation()}>
+            <div className="imageLightboxHead"><div><b>Review generated image</b><span>{previewImage.title}</span></div><button className="iconBtn" onClick={() => setPreviewImage(null)}>×</button></div>
+            <div className="imageLightboxCanvas"><img src={previewImage.url} alt={previewImage.title} /></div>
+            <div className="imageLightboxFoot"><span>Full-size preview · press Esc or click outside to close.</span><div><a className="ghost linkBtn" href={previewImage.url} target="_blank" rel="noreferrer">Open original</a>{previewJob?.image_status === "completed" && !previewJob.approved && <button className="primary" disabled={loading} onClick={async () => { await approve(previewJob); setPreviewImage(null); }}>{loading ? "Queueing…" : "Approve + video"}</button>}</div></div>
+          </div>
+        </div>}
+
         {!selected ? <div className="empty"><h2>Create your first batch</h2><p>Your Railway worker is ready. Create a batch and send products into the production queue.</p><button className="primary" onClick={() => setShowCreate(true)}>Create batch</button></div> : <>
           <section className="metrics">{metrics.map(([label, value]) => <div className="metric" key={String(label)}><span>{label}</span><b>{value}</b></div>)}</section>
 
@@ -312,7 +342,7 @@ export default function Home() {
           </section>
 
           <section className="panel production"><div className="panelHead"><div><h3>Production queue</h3><p>Auto-refreshes every 5 seconds. The Railway worker keeps processing even if this page is closed.</p></div><span className="liveDot">LIVE</span></div>
-            <div className="jobGrid">{selected.jobs.map(job => <article className="jobCard" key={job.id}><div className="media">{job.image_url ? <img src={job.image_url} alt={job.product_name || "Generated try-on"} /> : <div className="mediaPlaceholder"><span>{stageLabel(job.stage)}</span></div>}<div className="stageBadge">{stageLabel(job.stage)}</div></div><div className="jobBody"><h4>{job.product_name || "Importing product…"}</h4><div className="jobMeta"><span>Image: {job.image_status}</span><span>Video: {job.video_status}</span><span>1080p: {job.upscale_status}</span></div>{job.error && <div className="jobError">{job.error}</div>}
+            <div className="jobGrid">{selected.jobs.map(job => <article className="jobCard" key={job.id}><div className="media">{job.image_url ? <button type="button" className="generatedImageButton" title="Click to review larger" onClick={() => setPreviewImage({ url: job.image_url!, title: job.product_name || "Generated try-on", jobId: job.id })}><img src={job.image_url} alt={job.product_name || "Generated try-on"} /><span className="zoomHint">⌕ View larger</span></button> : <div className="mediaPlaceholder"><span>{stageLabel(job.stage)}</span></div>}<div className="stageBadge">{stageLabel(job.stage)}</div></div><div className="jobBody"><h4>{job.product_name || "Importing product…"}</h4><div className="jobMeta"><span>Image: {job.image_status}</span><span>Video: {job.video_status}</span><span>1080p: {job.upscale_status}</span></div>{job.error && <div className="jobError">{job.error}</div>}
               <div className="jobActions">{job.stage === "imported" && <button className="primary small" disabled={loading} onClick={() => openPhotoPicker(job)}>Select product photos</button>}{job.image_status === "completed" && !job.approved && <button className="primary small" disabled={loading} onClick={() => approve(job)}>Approve + video</button>}{job.stage === "failed" && <button className="dangerGhost small" disabled={loading} onClick={() => retry(job)}>Retry</button>}{job.video_url && <a className="ghost small linkBtn" href={job.video_url} target="_blank" rel="noreferrer">Open video</a>}{job.drive_video_url && <a className="ghost small linkBtn" href={job.drive_video_url} target="_blank" rel="noreferrer">Drive</a>}</div>
               {job.image_status === "completed" && !job.approved && <div className="regenBox"><input placeholder="Regenerate instruction…" value={regen[job.id] || ""} onChange={e => setRegen({ ...regen, [job.id]: e.target.value })} /><button className="ghost small" disabled={loading} onClick={() => regenerate(job)}>Regenerate</button></div>}
             </div></article>)}{!selected.jobs.length && <div className="muted pad">No products in this batch yet.</div>}</div>
