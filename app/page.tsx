@@ -9,6 +9,9 @@ type Job = {
   product_url?: string | null;
   product_id?: string | null;
   focus?: string | null;
+  listing_images?: string[];
+  review_images?: string[];
+  selected_refs?: string[];
   stage: string;
   approved: boolean;
   image_status: string;
@@ -89,6 +92,8 @@ export default function Home() {
   const [avatarMime, setAvatarMime] = useState("image/jpeg");
   const [links, setLinks] = useState("");
   const [regen, setRegen] = useState<Record<string, string>>({});
+  const [photoJobId, setPhotoJobId] = useState<string | null>(null);
+  const [refPick, setRefPick] = useState<Record<string, string[]>>({});
 
   const loadHealth = useCallback(async () => {
     try { setHealth(await api<Health>("/health")); } catch (e) { setError(e instanceof Error ? e.message : "Health check failed"); }
@@ -117,6 +122,11 @@ export default function Home() {
     const id = setInterval(() => { void loadBatches(); void loadSelected(); }, 5000);
     return () => clearInterval(id);
   }, [loadBatches, loadSelected]);
+  useEffect(() => {
+    if (!selected || photoJobId) return;
+    const imported = selected.jobs.find(j => j.stage === "imported" && !j.image_url);
+    if (imported) setPhotoJobId(imported.id);
+  }, [selected, photoJobId]);
 
   const counts = selected?.counts || {};
   const metrics = useMemo(() => [
@@ -127,6 +137,8 @@ export default function Home() {
     ["Archived", Number(counts.archived || 0)],
     ["Failed", Number(counts.failed || 0)],
   ], [counts]);
+
+  const photoJob = photoJobId ? selected?.jobs.find(j => j.id === photoJobId) || null : null;
 
   function flash(msg: string) { setMessage(msg); setError(""); setTimeout(() => setMessage(""), 3500); }
 
@@ -156,8 +168,8 @@ export default function Home() {
     if (!list.length) return;
     setLoading(true); setError("");
     try {
-      await api<Batch>(`/batches/${selectedId}/products`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ links: list, start_generation: true }) });
-      setLinks(""); await loadSelected(); flash(`${list.length} product link(s) queued`);
+      await api<Batch>(`/batches/${selectedId}/products`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ links: list, start_generation: false }) });
+      setLinks(""); await loadSelected(); flash(`${list.length} product link(s) imported — choose product photos next`);
     } catch (e) { setError(e instanceof Error ? e.message : "Import failed"); }
     finally { setLoading(false); }
   }
@@ -168,9 +180,47 @@ export default function Home() {
     if (!rows.length) return;
     setLoading(true); setError("");
     try {
-      await api<Batch>(`/batches/${selectedId}/scanner/import`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ row_nums: rows, start_generation: true }) });
-      setScannerPick(new Set()); await Promise.all([loadSelected(), loadScanner()]); flash(`${rows.length} scanner product(s) queued`);
+      await api<Batch>(`/batches/${selectedId}/scanner/import`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ row_nums: rows, start_generation: false }) });
+      setScannerPick(new Set()); await Promise.all([loadSelected(), loadScanner()]); flash(`${rows.length} scanner product(s) imported — choose product photos next`);
     } catch (e) { setError(e instanceof Error ? e.message : "Scanner import failed"); }
+    finally { setLoading(false); }
+  }
+
+  function refsFor(job: Job) {
+    return refPick[job.id] ?? job.selected_refs ?? [];
+  }
+
+  function openPhotoPicker(job: Job) {
+    setRefPick(prev => ({ ...prev, [job.id]: prev[job.id] ?? job.selected_refs ?? [] }));
+    setPhotoJobId(job.id);
+  }
+
+  function toggleRef(job: Job, url: string) {
+    setRefPick(prev => {
+      const current = prev[job.id] ?? job.selected_refs ?? [];
+      if (current.includes(url)) return { ...prev, [job.id]: current.filter(x => x !== url) };
+      if (current.length >= 5) {
+        setError("You can select up to 5 product photos.");
+        return prev;
+      }
+      setError("");
+      return { ...prev, [job.id]: [...current, url] };
+    });
+  }
+
+  async function startImageWithRefs(job: Job) {
+    const refs = refsFor(job);
+    if (!refs.length) { setError("Select at least one product photo."); return; }
+    setLoading(true); setError("");
+    try {
+      await api<Job>(`/jobs/${job.id}/references`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ refs, start_generation: true })
+      });
+      setPhotoJobId(null);
+      await loadSelected();
+      flash(`Using ${refs.length} selected product photo${refs.length === 1 ? "" : "s"} — image queued`);
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not start image generation"); }
     finally { setLoading(false); }
   }
 
@@ -240,6 +290,16 @@ export default function Home() {
           <label className="check wide"><input type="checkbox" checked={autoApprove} onChange={e => setAutoApprove(e.target.checked)} /> Auto-approve images and continue to video</label>
         </div><div className="modalFoot"><button className="ghost" onClick={() => setShowCreate(false)}>Cancel</button><button className="primary" disabled={loading} onClick={createBatch}>{loading ? "Creating…" : "Create batch"}</button></div></div></div>}
 
+        {photoJob && <div className="modalBackdrop"><div className="modal photoModal">
+          <div className="modalHead"><div><h2>Select product photos</h2><p className="modalSub">{photoJob.product_name || "Imported product"}</p></div><button className="iconBtn" onClick={() => setPhotoJobId(null)}>×</button></div>
+          <div className="photoPickerTop"><div><b>{refsFor(photoJob).length} selected</b><span>Choose 1–5 images that show the exact product most clearly. Listing and review photos can be mixed.</span></div><button className="ghost small" onClick={() => setRefPick(prev => ({ ...prev, [photoJob.id]: [] }))}>Clear</button></div>
+          <div className="photoSections">
+            <div><div className="photoSectionTitle">Listing photos <span>{photoJob.listing_images?.length || 0}</span></div><div className="photoGrid">{(photoJob.listing_images || []).map((url, i) => { const picked = refsFor(photoJob).includes(url); const order = refsFor(photoJob).indexOf(url) + 1; return <button type="button" className={`photoThumb ${picked ? "picked" : ""}`} key={`listing-${i}-${url}`} onClick={() => toggleRef(photoJob, url)}><img src={url} alt={`Listing product ${i + 1}`} /><span>{picked ? order : "+"}</span></button>; })}{!(photoJob.listing_images || []).length && <div className="muted pad">No listing photos returned.</div>}</div></div>
+            <div><div className="photoSectionTitle">Review photos <span>{photoJob.review_images?.length || 0}</span></div><div className="photoGrid">{(photoJob.review_images || []).map((url, i) => { const picked = refsFor(photoJob).includes(url); const order = refsFor(photoJob).indexOf(url) + 1; return <button type="button" className={`photoThumb ${picked ? "picked" : ""}`} key={`review-${i}-${url}`} onClick={() => toggleRef(photoJob, url)}><img src={url} alt={`Review product ${i + 1}`} /><span>{picked ? order : "+"}</span></button>; })}{!(photoJob.review_images || []).length && <div className="muted pad">No review photos returned.</div>}</div></div>
+          </div>
+          <div className="modalFoot photoFoot"><span className="muted">Nothing generates until you press Generate try-on.</span><div><button className="ghost" onClick={() => setPhotoJobId(null)}>Cancel</button><button className="primary" disabled={loading || !refsFor(photoJob).length} onClick={() => startImageWithRefs(photoJob)}>{loading ? "Queueing…" : `Generate try-on (${refsFor(photoJob).length})`}</button></div></div>
+        </div></div>}
+
         {!selected ? <div className="empty"><h2>Create your first batch</h2><p>Your Railway worker is ready. Create a batch and send products into the production queue.</p><button className="primary" onClick={() => setShowCreate(true)}>Create batch</button></div> : <>
           <section className="metrics">{metrics.map(([label, value]) => <div className="metric" key={String(label)}><span>{label}</span><b>{value}</b></div>)}</section>
 
@@ -248,12 +308,12 @@ export default function Home() {
               <div className="scannerList">{scanner.slice(0, 12).map((row, idx) => { const n = Number(row._row_num || 0); const title = String(row["Product Name"] || row["Product"] || `Scanner product ${idx + 1}`); const selectedRow = scannerPick.has(n); return <label className={`scannerRow ${selectedRow ? "picked" : ""}`} key={`${n}-${idx}`}><input type="checkbox" checked={selectedRow} onChange={() => setScannerPick(prev => { const next = new Set(prev); selectedRow ? next.delete(n) : next.add(n); return next; })} /><div><b>{title}</b><span>{String(row["Creators"] || "")}</span></div></label>; })}{!scanner.length && <div className="muted pad">No pending scanner products.</div>}</div>
               <button className="primary full" disabled={!scannerPick.size || loading} onClick={importScanner}>Import selected ({scannerPick.size})</button>
             </div>
-            <div className="panel"><div className="panelHead"><div><h3>Import product links</h3><p>Paste one TikTok Shop product URL per line.</p></div></div><textarea className="linkBox" value={links} onChange={e => setLinks(e.target.value)} placeholder="https://www.tiktok.com/view/product/..." /><button className="primary full" disabled={!links.trim() || loading} onClick={importLinks}>Queue products</button><div className="miniInfo"><b>Current batch</b><span>{selected.scene} · {selected.creator_profile} · {selected.video_style}</span></div></div>
+            <div className="panel"><div className="panelHead"><div><h3>Import product links</h3><p>Paste one TikTok Shop product URL per line.</p></div></div><textarea className="linkBox" value={links} onChange={e => setLinks(e.target.value)} placeholder="https://www.tiktok.com/view/product/..." /><button className="primary full" disabled={!links.trim() || loading} onClick={importLinks}>Import products</button><div className="miniInfo"><b>Current batch</b><span>{selected.scene} · {selected.creator_profile} · {selected.video_style}</span></div></div>
           </section>
 
           <section className="panel production"><div className="panelHead"><div><h3>Production queue</h3><p>Auto-refreshes every 5 seconds. The Railway worker keeps processing even if this page is closed.</p></div><span className="liveDot">LIVE</span></div>
             <div className="jobGrid">{selected.jobs.map(job => <article className="jobCard" key={job.id}><div className="media">{job.image_url ? <img src={job.image_url} alt={job.product_name || "Generated try-on"} /> : <div className="mediaPlaceholder"><span>{stageLabel(job.stage)}</span></div>}<div className="stageBadge">{stageLabel(job.stage)}</div></div><div className="jobBody"><h4>{job.product_name || "Importing product…"}</h4><div className="jobMeta"><span>Image: {job.image_status}</span><span>Video: {job.video_status}</span><span>1080p: {job.upscale_status}</span></div>{job.error && <div className="jobError">{job.error}</div>}
-              <div className="jobActions">{job.image_status === "completed" && !job.approved && <button className="primary small" disabled={loading} onClick={() => approve(job)}>Approve + video</button>}{job.stage === "failed" && <button className="dangerGhost small" disabled={loading} onClick={() => retry(job)}>Retry</button>}{job.video_url && <a className="ghost small linkBtn" href={job.video_url} target="_blank" rel="noreferrer">Open video</a>}{job.drive_video_url && <a className="ghost small linkBtn" href={job.drive_video_url} target="_blank" rel="noreferrer">Drive</a>}</div>
+              <div className="jobActions">{job.stage === "imported" && <button className="primary small" disabled={loading} onClick={() => openPhotoPicker(job)}>Select product photos</button>}{job.image_status === "completed" && !job.approved && <button className="primary small" disabled={loading} onClick={() => approve(job)}>Approve + video</button>}{job.stage === "failed" && <button className="dangerGhost small" disabled={loading} onClick={() => retry(job)}>Retry</button>}{job.video_url && <a className="ghost small linkBtn" href={job.video_url} target="_blank" rel="noreferrer">Open video</a>}{job.drive_video_url && <a className="ghost small linkBtn" href={job.drive_video_url} target="_blank" rel="noreferrer">Drive</a>}</div>
               {job.image_status === "completed" && !job.approved && <div className="regenBox"><input placeholder="Regenerate instruction…" value={regen[job.id] || ""} onChange={e => setRegen({ ...regen, [job.id]: e.target.value })} /><button className="ghost small" disabled={loading} onClick={() => regenerate(job)}>Regenerate</button></div>}
             </div></article>)}{!selected.jobs.length && <div className="muted pad">No products in this batch yet.</div>}</div>
           </section>
