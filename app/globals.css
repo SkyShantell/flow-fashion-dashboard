@@ -28,3 +28,9 @@
 .productionBadges{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 10px}
 .productionBadges span{background:#111b29;border:1px solid #26354a;color:#aebbd0;border-radius:999px;padding:5px 8px;font-size:10px;font-weight:800;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @media(max-width:760px){.preGenGrid{grid-template-columns:1fr}.preGenHead,.settingLabel{display:block}.preGenHead span,.settingLabel span{display:block;margin-top:5px}}
+
+/* V6 Academy motion preset grouping */
+.motionGroupLabel{margin:12px 0 7px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#8fa4c1;font-weight:900}
+.motionGroupLabel.customLabel{margin-top:14px;color:#78879b}
+.motionNote{margin-top:12px;padding:10px 11px;border-radius:10px;background:#0a1019;border:1px solid #202d41;color:#8392a8;font-size:11px;line-height:1.45}
+.fieldHint{font-size:10px;color:#7f8ca0;font-weight:600;line-height:1.35}

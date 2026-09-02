@@ -64,7 +64,12 @@ type Health = {
 
 const scenes = ["Modern apartment mirror", "Walk-in closet", "Luxury bathroom mirror", "Penthouse at night", "Casual bedroom mirror", "Modern hotel room mirror", "Warm living room mirror", "Apartment entryway mirror"];
 const profiles = ["Male", "Female"];
-const styles = ["Calm", "Casual UGC", "Fit Check", "Detail Focus", "Streetwear", "High-energy", "Flashy"];
+const maleAcademyStyles = ["Academy — Boss / Calm", "Academy — High-Energy", "Academy — Rapid-Fire / Flashy"];
+const femaleAcademyStyles = ["Academy — Elegant / Calm", "Academy — High-Energy", "Academy — Flash-Lit"];
+const customStyles = ["Custom — Casual UGC", "Custom — Fit Check", "Custom — Detail Focus"];
+function academyStylesFor(profile: string) { return profile === "Female" ? femaleAcademyStyles : maleAcademyStyles; }
+function motionStylesFor(profile: string) { return [...academyStylesFor(profile), ...customStyles]; }
+function defaultMotionFor(profile: string) { return academyStylesFor(profile)[0]; }
 const productTypes = [
   { value: "outfit", label: "Outfit / Set" },
   { value: "shirt", label: "Shirt / Top" },
@@ -108,7 +113,7 @@ export default function Home() {
   const [name, setName] = useState("Today's Fashion Batch");
   const [scenePool, setScenePool] = useState<string[]>([scenes[0]]);
   const [profile, setProfile] = useState(profiles[0]);
-  const [motionPool, setMotionPool] = useState<string[]>([styles[0]]);
+  const [motionPool, setMotionPool] = useState<string[]>([maleAcademyStyles[0]]);
   const [autoApprove, setAutoApprove] = useState(false);
   const [avatarB64, setAvatarB64] = useState<string | null>(null);
   const [avatarMime, setAvatarMime] = useState("image/jpeg");
@@ -186,11 +191,19 @@ export default function Home() {
       setter(current.filter(x => x !== value));
     } else setter([...current, value]);
   }
+  function changeProfile(next: string) {
+    setProfile(next);
+    const valid = motionStylesFor(next);
+    setMotionPool(prev => {
+      const kept = prev.filter(x => valid.includes(x));
+      return kept.length ? kept : [defaultMotionFor(next)];
+    });
+  }
   function settingsFor(job: Job): JobSettings {
     return jobSettings[job.id] || {
       focus: job.focus || "outfit",
       scene: job.scene || selected?.scene || scenes[0],
-      motion_style: job.motion_style || selected?.video_style || styles[0],
+      motion_style: job.motion_style || selected?.video_style || defaultMotionFor(selected?.creator_profile || "Male"),
     };
   }
 
@@ -244,7 +257,7 @@ export default function Home() {
 
   function openPhotoPicker(job: Job) {
     setRefPick(prev => ({ ...prev, [job.id]: prev[job.id] ?? job.selected_refs ?? [] }));
-    setJobSettings(prev => ({ ...prev, [job.id]: prev[job.id] || { focus: job.focus || "outfit", scene: job.scene || selected?.scene || scenes[0], motion_style: job.motion_style || selected?.video_style || styles[0] } }));
+    setJobSettings(prev => ({ ...prev, [job.id]: prev[job.id] || { focus: job.focus || "outfit", scene: job.scene || selected?.scene || scenes[0], motion_style: job.motion_style || selected?.video_style || defaultMotionFor(selected?.creator_profile || "Male") } }));
     setPhotoJobId(job.id);
   }
 
@@ -381,9 +394,9 @@ export default function Home() {
 
         {showCreate && <div className="modalBackdrop"><div className="modal batchSettingsModal"><div className="modalHead"><div><h2>Create production batch</h2><p className="modalSub">Pick one or several backgrounds and motion styles. If you select several, products rotate through them automatically.</p></div><button className="iconBtn" onClick={() => setShowCreate(false)}>×</button></div><div className="formGrid">
           <label>Batch name<input value={name} onChange={e => setName(e.target.value)} /></label>
-          <label>Creator<select value={profile} onChange={e => setProfile(e.target.value)}>{profiles.map(x => <option key={x}>{x}</option>)}</select></label>
+          <label>Creator<select value={profile} onChange={e => changeProfile(e.target.value)}>{profiles.map(x => <option key={x}>{x}</option>)}</select></label>
           <div className="wide settingBlock"><div className="settingLabel"><b>Backgrounds</b><span>{scenePool.length > 1 ? `Rotate ${scenePool.length} settings across the batch` : "Same setting for every product"}</span></div><div className="choiceChips">{scenes.map(x => <button type="button" key={x} className={scenePool.includes(x) ? "choiceChip selected" : "choiceChip"} onClick={() => togglePool(x, scenePool, setScenePool)}>{x}</button>)}</div></div>
-          <div className="wide settingBlock"><div className="settingLabel"><b>Motion styles</b><span>{motionPool.length > 1 ? `Rotate ${motionPool.length} motion styles across the batch` : "Same motion style for every product"}</span></div><div className="choiceChips">{styles.map(x => <button type="button" key={x} className={motionPool.includes(x) ? "choiceChip selected" : "choiceChip"} onClick={() => togglePool(x, motionPool, setMotionPool)}>{x}</button>)}</div></div>
+          <div className="wide settingBlock"><div className="settingLabel"><b>Motion styles</b><span>{motionPool.length > 1 ? `Rotate ${motionPool.length} motion styles across the batch` : "Same motion style for every product"}</span></div><div className="motionGroupLabel">Academy presets · recommended · matched to {profile.toLowerCase()} creator</div><div className="choiceChips">{academyStylesFor(profile).map(x => <button type="button" key={x} className={motionPool.includes(x) ? "choiceChip selected" : "choiceChip"} onClick={() => togglePool(x, motionPool, setMotionPool)}>{x}</button>)}</div><div className="motionGroupLabel customLabel">Custom extras</div><div className="choiceChips">{customStyles.map(x => <button type="button" key={x} className={motionPool.includes(x) ? "choiceChip selected" : "choiceChip"} onClick={() => togglePool(x, motionPool, setMotionPool)}>{x}</button>)}</div><div className="motionNote">Academy presets follow the motion structure in your AI Shop Academy PDF. Bags and shoes automatically switch to the PDF product-specific motion sequence; pants/jeans/dresses/skirts use the PDF back/side fit reveal.</div></div>
           <label className="wide">Avatar / creator reference<input type="file" accept="image/*" onChange={onAvatar} /></label>
           <label className="check wide"><input type="checkbox" checked={autoApprove} onChange={e => setAutoApprove(e.target.checked)} /> Auto-approve images and continue to video</label>
         </div><div className="modalFoot"><button className="ghost" onClick={() => setShowCreate(false)}>Cancel</button><button className="primary" disabled={loading} onClick={createBatch}>{loading ? "Creating…" : "Create batch"}</button></div></div></div>}
@@ -394,7 +407,7 @@ export default function Home() {
           <div className="preGenSettings"><div className="preGenHead"><b>Generation settings</b><span>Set these before generating. Product type controls framing; background controls the image; motion controls the video.</span></div><div className="preGenGrid">
             <label>Product type <span className="detectedTag">Detected: {productTypeLabel(photoJob.focus)}</span><select value={settingsFor(photoJob).focus} onChange={e => setJobSettings(prev => ({ ...prev, [photoJob.id]: { ...settingsFor(photoJob), focus: e.target.value } }))}>{productTypes.map(x => <option key={x.value} value={x.value}>{x.label}</option>)}</select></label>
             <label>Background<select value={settingsFor(photoJob).scene} onChange={e => setJobSettings(prev => ({ ...prev, [photoJob.id]: { ...settingsFor(photoJob), scene: e.target.value } }))}>{scenes.map(x => <option key={x}>{x}</option>)}</select></label>
-            <label>Motion style<select value={settingsFor(photoJob).motion_style} onChange={e => setJobSettings(prev => ({ ...prev, [photoJob.id]: { ...settingsFor(photoJob), motion_style: e.target.value } }))}>{styles.map(x => <option key={x}>{x}</option>)}</select></label>
+            <label>Motion style<select value={settingsFor(photoJob).motion_style} onChange={e => setJobSettings(prev => ({ ...prev, [photoJob.id]: { ...settingsFor(photoJob), motion_style: e.target.value } }))}>{Array.from(new Set([settingsFor(photoJob).motion_style, ...motionStylesFor(selected?.creator_profile || "Male")])).map(x => <option key={x}>{x}</option>)}</select><span className="fieldHint">Academy presets use the PDF sequence; product-specific bag/shoe/fit logic is automatic.</span></label>
           </div></div>
           <div className="photoSections">
             <div><div className="photoSectionTitle">Listing photos <span>{photoJob.listing_images?.length || 0}</span></div><div className="photoGrid">{(photoJob.listing_images || []).map((url, i) => { const picked = refsFor(photoJob).includes(url); const order = refsFor(photoJob).indexOf(url) + 1; return <button type="button" className={`photoThumb ${picked ? "picked" : ""}`} key={`listing-${i}-${url}`} onClick={() => toggleRef(photoJob, url)}><img src={url} alt={`Listing product ${i + 1}`} /><span>{picked ? order : "+"}</span></button>; })}{!(photoJob.listing_images || []).length && <div className="muted pad">No listing photos returned.</div>}</div></div>
