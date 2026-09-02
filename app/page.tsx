@@ -23,6 +23,7 @@ type Job = {
   video_url?: string | null;
   video_resolution?: string | null;
   drive_video_url?: string | null;
+  drive_video_download_url?: string | null;
   error?: string | null;
 };
 
@@ -341,7 +342,7 @@ export default function Home() {
       const production = settingsFor(job);
       await api<Job>(`/jobs/${job.id}/references`, {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ refs, start_generation: true, focus: production.focus, scene: production.scene, motion_style: production.motion_style })
+        body: JSON.stringify({ refs, start_generation: false, focus: production.focus, scene: production.scene, motion_style: production.motion_style })
       });
       const refreshed = await api<Batch>(`/batches/${job.batch_id}`);
       setSelected(refreshed);
@@ -353,10 +354,10 @@ export default function Home() {
         setRefPick(prev => ({ ...prev, [next.id]: prev[next.id] ?? next.selected_refs ?? [] }));
         setJobSettings(prev => ({ ...prev, [next.id]: prev[next.id] || { focus: next.focus || "outfit", scene: next.scene || refreshed.scene || scenes[0], motion_style: next.motion_style || refreshed.video_style || defaultMotionFor(refreshed.creator_profile || "Male") } }));
         setPhotoJobId(next.id);
-        flash(`Image queued — moved to next product (${refs.length} reference${refs.length === 1 ? "" : "s"} used)`);
+        flash(`Product photos saved — moved to next product (${refs.length} reference${refs.length === 1 ? "" : "s"})`);
       } else {
         setPhotoJobId(null);
-        flash(`Image queued — all product photo selections are finished`);
+        flash(`All product photo selections are saved — ready for Generate all images`);
       }
     } catch (e) { setError(e instanceof Error ? e.message : "Could not start image generation"); }
     finally { setLoading(false); }
@@ -413,6 +414,74 @@ export default function Home() {
       await loadSelected();
       flash("Video regeneration queued with your changes");
     } catch (e) { setError(e instanceof Error ? e.message : "Video regeneration failed"); }
+    finally { setLoading(false); }
+  }
+
+  async function generateAllImages() {
+    if (!selectedId) return;
+    setLoading(true); setError("");
+    try {
+      const batch = await api<Batch>(`/batches/${selectedId}/generate-images`, { method: "POST" });
+      setSelected(batch);
+      setBatches(prev => prev.map(b => b.id === batch.id ? batch : b));
+      flash("All reviewed products queued for image generation");
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not generate all images"); }
+    finally { setLoading(false); }
+  }
+
+  async function generateAllVideos() {
+    if (!selectedId || !selected) return;
+    const candidates = selected.jobs.filter(j => j.image_status === "completed" && (j.video_status === "pending" || !j.video_status) && j.upscale_status !== "completed");
+    if (!candidates.length) { setError("No completed images are waiting for video generation."); return; }
+    if (!window.confirm(`Generate videos for ${candidates.length} completed image${candidates.length === 1 ? "" : "s"}? This approves those images and sends them to Omni.`)) return;
+    setLoading(true); setError("");
+    try {
+      const batch = await api<Batch>(`/batches/${selectedId}/generate-videos`, { method: "POST" });
+      setSelected(batch);
+      setBatches(prev => prev.map(b => b.id === batch.id ? batch : b));
+      flash(`${candidates.length} video${candidates.length === 1 ? "" : "s"} queued`);
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not generate all videos"); }
+    finally { setLoading(false); }
+  }
+
+  function safeFilename(job: Job, index: number) {
+    const base = String(job.product_name || `product-${index + 1}`).replace(/[^a-z0-9-_]+/gi, "-").replace(/^-+|-+$/g, "").slice(0, 80) || `product-${index + 1}`;
+    return `${String(index + 1).padStart(2, "0")}-${base}.mp4`;
+  }
+
+  function downloadAllVideos() {
+    if (!selected) return;
+    const ready = selected.jobs.map((job, index) => ({ job, index, url: job.drive_video_download_url || job.video_url || "" })).filter(x => x.url);
+    if (!ready.length) { setError("No completed videos are available to download yet."); return; }
+    setError("");
+    ready.forEach(({ job, index, url }, position) => {
+      window.setTimeout(() => {
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = safeFilename(job, index);
+        a.target = "_blank";
+        a.rel = "noreferrer";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }, position * 350);
+    });
+    flash(`Started ${ready.length} video download${ready.length === 1 ? "" : "s"}. If Chrome asks, allow multiple downloads for this site.`);
+  }
+
+  async function generateOneImage(job: Job) {
+    const refs = job.selected_refs || [];
+    if (!refs.length) { setError("Select and save product photos first."); return; }
+    setLoading(true); setError("");
+    try {
+      const production = settingsFor(job);
+      await api<Job>(`/jobs/${job.id}/references`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ refs, start_generation: true, focus: production.focus, scene: production.scene, motion_style: production.motion_style })
+      });
+      await loadSelected();
+      flash("Image queued");
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not generate image"); }
     finally { setLoading(false); }
   }
 
@@ -488,7 +557,7 @@ export default function Home() {
             <div><div className="photoSectionTitle">Listing photos <span>{photoJob.listing_images?.length || 0}</span></div><div className="photoGrid">{(photoJob.listing_images || []).map((url, i) => { const picked = refsFor(photoJob).includes(url); const order = refsFor(photoJob).indexOf(url) + 1; return <button type="button" className={`photoThumb ${picked ? "picked" : ""}`} key={`listing-${i}-${url}`} onClick={() => toggleRef(photoJob, url)}><img src={url} alt={`Listing product ${i + 1}`} /><span>{picked ? order : "+"}</span></button>; })}{!(photoJob.listing_images || []).length && <div className="muted pad">No listing photos returned.</div>}</div></div>
             <div><div className="photoSectionTitle">Review photos <span>{photoJob.review_images?.length || 0}</span></div><div className="photoGrid">{(photoJob.review_images || []).map((url, i) => { const picked = refsFor(photoJob).includes(url); const order = refsFor(photoJob).indexOf(url) + 1; return <button type="button" className={`photoThumb ${picked ? "picked" : ""}`} key={`review-${i}-${url}`} onClick={() => toggleRef(photoJob, url)}><img src={url} alt={`Review product ${i + 1}`} /><span>{picked ? order : "+"}</span></button>; })}{!(photoJob.review_images || []).length && <div className="muted pad">No review photos returned.</div>}</div></div>
           </div>
-          <div className="modalFoot photoFoot"><span className="muted">Nothing generates until you press Generate try-on.</span><div><button className="ghost" onClick={() => setPhotoJobId(null)}>Cancel</button><button className="primary" disabled={loading || !refsFor(photoJob).length} onClick={() => startImageWithRefs(photoJob)}>{loading ? "Queueing…" : `Generate + next (${refsFor(photoJob).length})`}</button></div></div>
+          <div className="modalFoot photoFoot"><span className="muted">Save each product's references first, then use Generate all images — or generate an individual image from its card.</span><div><button className="ghost" onClick={() => setPhotoJobId(null)}>Cancel</button><button className="primary" disabled={loading || !refsFor(photoJob).length} onClick={() => startImageWithRefs(photoJob)}>{loading ? "Saving…" : `Save + next (${refsFor(photoJob).length})`}</button></div></div>
         </div></div>}
 
         {previewImage && <div className="imageLightboxBackdrop" onClick={() => setPreviewImage(null)}>
@@ -520,9 +589,9 @@ export default function Home() {
             <div className="panel"><div className="panelHead"><div><h3>Import product links</h3><p>Paste one TikTok Shop product URL per line.</p></div></div><textarea className="linkBox" value={links} onChange={e => setLinks(e.target.value)} placeholder="https://www.tiktok.com/view/product/..." /><button className="primary full" disabled={!links.trim() || loading} onClick={importLinks}>Import products</button><div className="miniInfo"><b>Current batch</b><span>{selected.creator_profile} · {(selected.scene_pool?.length || 1)} background{(selected.scene_pool?.length || 1) === 1 ? "" : "s"} · {(selected.motion_pool?.length || 1)} motion style{(selected.motion_pool?.length || 1) === 1 ? "" : "s"}</span></div></div>
           </section>
 
-          <section className="panel production"><div className="panelHead"><div><h3>Production queue</h3><p>Auto-refreshes every 5 seconds. The Railway worker keeps processing even if this page is closed.</p></div><span className="liveDot">LIVE</span></div>
+          <section className="panel production"><div className="panelHead productionHead"><div><h3>Production queue</h3><p>Review product photos first, then run the batch in stages. The Railway worker keeps processing even if this page is closed.</p></div><div className="bulkActions"><button className="ghost small bulkImage" disabled={loading || !selected.jobs.some(j => j.stage === "ready_for_image" && !!j.selected_refs?.length)} onClick={generateAllImages}>Generate all images</button><button className="ghost small bulkVideo" disabled={loading || !selected.jobs.some(j => j.image_status === "completed" && (j.video_status === "pending" || !j.video_status) && j.upscale_status !== "completed")} onClick={generateAllVideos}>Generate all videos</button><button className="primary small" disabled={!selected.jobs.some(j => !!(j.drive_video_download_url || j.video_url))} onClick={downloadAllVideos}>Download all videos</button><span className="liveDot">LIVE</span></div></div>
             <div className="jobGrid">{selected.jobs.map(job => <article className="jobCard" key={job.id}><div className="media">{job.image_url ? <button type="button" className="generatedImageButton" title="Click to review larger" onClick={() => setPreviewImage({ url: job.image_url!, title: job.product_name || "Generated try-on", jobId: job.id })}><img src={job.image_url} alt={job.product_name || "Generated try-on"} /><span className="zoomHint">⌕ View larger</span></button> : <div className="mediaPlaceholder"><span>{stageLabel(job.stage)}</span></div>}<div className="stageBadge">{stageLabel(job.stage)}</div></div><div className="jobBody"><h4>{job.product_name || "Importing product…"}</h4><div className="productionBadges"><span>{productTypeLabel(job.focus)}</span><span>{job.scene || selected.scene || "Background"}</span><span>{job.motion_style || selected.video_style || "Motion"}</span></div>{!!job.selected_refs?.length && <div className="usedRefs"><div className="usedRefsHead"><b>Product photos used</b><span>{job.selected_refs.length}</span></div><div className="usedRefStrip">{job.selected_refs.map((url, i) => <a href={url} target="_blank" rel="noreferrer" title={`Open product reference ${i + 1}`} key={`${job.id}-used-${i}`}><img src={url} alt={`Selected product reference ${i + 1}`} /><span>{i + 1}</span></a>)}</div></div>}<div className="jobMeta"><span>Image: {job.image_status}</span><span>Video: {job.video_status}</span><span>1080p: {job.upscale_status}</span></div>{job.error && <div className="jobError">{job.error}</div>}
-              <div className="jobActions">{job.stage === "imported" && <button className="primary small" disabled={loading} onClick={() => openPhotoPicker(job)}>Select product photos</button>}{job.image_status === "completed" && !job.approved && <button className="primary small" disabled={loading} onClick={() => approve(job)}>Approve + video</button>}{job.image_status === "completed" && <button className="ghost small" disabled={loading} onClick={() => openVideoPrompt(job)}>Video prompt</button>}{job.stage === "failed" && <button className="dangerGhost small" disabled={loading} onClick={() => retry(job)}>Retry</button>}{job.video_url && <a className="ghost small linkBtn" href={job.video_url} target="_blank" rel="noreferrer">Open video</a>}{job.drive_video_url && <a className="ghost small linkBtn" href={job.drive_video_url} target="_blank" rel="noreferrer">Drive</a>}</div>
+              <div className="jobActions">{job.stage === "imported" && <button className="primary small" disabled={loading} onClick={() => openPhotoPicker(job)}>Select product photos</button>}{job.stage === "ready_for_image" && <button className="primary small" disabled={loading} onClick={() => generateOneImage(job)}>Generate image</button>}{job.image_status === "completed" && !job.approved && <button className="primary small" disabled={loading} onClick={() => approve(job)}>Approve + video</button>}{job.image_status === "completed" && <button className="ghost small" disabled={loading} onClick={() => openVideoPrompt(job)}>Video prompt</button>}{job.stage === "failed" && <button className="dangerGhost small" disabled={loading} onClick={() => retry(job)}>Retry</button>}{job.video_url && <a className="ghost small linkBtn" href={job.video_url} target="_blank" rel="noreferrer">Open video</a>}{job.drive_video_url && <a className="ghost small linkBtn" href={job.drive_video_url} target="_blank" rel="noreferrer">Drive</a>}</div>
               {job.image_status === "completed" && !job.approved && <div className="regenBox"><input placeholder="Regenerate instruction…" value={regen[job.id] || ""} onChange={e => setRegen({ ...regen, [job.id]: e.target.value })} /><button className="ghost small" disabled={loading} onClick={() => regenerate(job)}>Regenerate</button></div>}
             </div></article>)}{!selected.jobs.length && <div className="muted pad">No products in this batch yet.</div>}</div>
           </section>
