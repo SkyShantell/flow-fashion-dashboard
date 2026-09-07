@@ -84,3 +84,56 @@
   background:#182130;
   color:#fff;
 }
+
+/* V18.2: always-visible Momentum Sniper Queue beside Creator Scanner */
+.grid3{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:16px;
+  margin-bottom:16px;
+}
+.importGrid .panel{
+  min-width:0;
+}
+.sniperQueuePanel{
+  display:flex;
+  flex-direction:column;
+}
+.sniperEmpty{
+  min-height:255px;
+  display:grid;
+  place-items:center;
+  align-content:center;
+  text-align:center;
+  gap:8px;
+  border:1px solid #1d2634;
+  border-radius:12px;
+  background:#080c12;
+  color:#dce5f3;
+  padding:22px;
+}
+.sniperEmpty span{
+  max-width:290px;
+  color:var(--muted);
+  font-size:11px;
+  line-height:1.5;
+}
+.compactSniperGrid{
+  grid-template-columns:1fr;
+  max-height:410px;
+  overflow:auto;
+}
+.compactSniperCard{
+  padding:12px;
+}
+.compactSniperCard .sniperControls{
+  grid-template-columns:1fr;
+}
+@media(max-width:1350px){
+  .grid3{grid-template-columns:1fr 1fr}
+  .importGrid>div:last-child{grid-column:1/-1}
+}
+@media(max-width:880px){
+  .grid3{grid-template-columns:1fr}
+  .importGrid>div:last-child{grid-column:auto}
+}

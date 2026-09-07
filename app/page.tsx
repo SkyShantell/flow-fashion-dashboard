@@ -755,38 +755,116 @@ export default function Home() {
           </>}
         </div></div>}
 
-        {!!sniperGroups.length && <section className="panel sniperInbox">
-          <div className="panelHead"><div><h3>Momentum Sniper Queue</h3><p>Same Scanner Queue as Creator Scanner. Pick the avatar first, then add the run to an open batch for that avatar or start a fresh batch.</p></div><button className="ghost small" onClick={() => void loadScanner()}>Reload</button></div>
-          <div className="sniperRunGrid">
-            {sniperGroups.map(group => {
-              const avatarId = sniperAvatarByRun[group.id] || "";
-              const avatar = savedAvatars.find(a => a.id === avatarId);
-              const openAvatarBatches = avatar ? batches.filter(b => b.mode !== "shoe_showcase" && String(b.status || "open").toLowerCase() !== "done" && String(b.avatar_name || "") === avatar.name) : [];
-              const destination = sniperDestinationByRun[group.id] || (openAvatarBatches[0]?.id || "new");
-              return <div className="sniperRunCard" key={group.id}>
-                <div className="sniperRunHead"><div><b>{group.preset}</b><span>{group.rows.length} product{group.rows.length === 1 ? "" : "s"} · {group.sourceFile || group.id}</span></div><span className="sourceBadge">Momentum Sniper</span></div>
-                <div className="sniperControls">
-                  <label>Avatar<select value={avatarId} onChange={e => { const value = e.target.value; setSniperAvatarByRun(prev => ({ ...prev, [group.id]: value })); setSniperDestinationByRun(prev => ({ ...prev, [group.id]: "" })); }}><option value="">Choose saved avatar…</option>{savedAvatars.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></label>
-                  <label>Creator profile<select value={sniperProfileByRun[group.id] || "Male"} onChange={e => setSniperProfileByRun(prev => ({ ...prev, [group.id]: e.target.value }))}>{profiles.map(x => <option key={x}>{x}</option>)}</select></label>
-                  <label>Destination<select disabled={!avatar} value={destination} onChange={e => setSniperDestinationByRun(prev => ({ ...prev, [group.id]: e.target.value }))}>{openAvatarBatches.map(b => <option key={b.id} value={b.id}>Add to open: {b.name}</option>)}<option value="new">Start new {avatar?.name || "avatar"} batch</option></select></label>
-                </div>
-                {avatar && !openAvatarBatches.length && <div className="sniperHint">No open {avatar.name} batch exists, so this run will start a new one.</div>}
-                <button className="primary full" disabled={!avatar || loading} onClick={() => importSniperRun(group.id, group.rows)}>{destination === "new" ? `Start ${avatar?.name || "avatar"} batch with ${group.rows.length}` : `Add ${group.rows.length} to ${avatar?.name || "avatar"} batch`}</button>
-              </div>;
-            })}
-          </div>
-        </section>}
-
         {!selected ? <div className="empty"><h2>Create your first batch</h2><p>Your Railway worker is ready. Create a batch and send products into the production queue.</p><button className="primary" onClick={() => setShowCreate(true)}>Create batch</button></div> : <>
           <section className="metrics">{metrics.map(([label, value]) => <div className="metric" key={String(label)}><span>{label}</span><b>{value}</b></div>)}</section>
 
-          <section className="grid2">
-            <div className="panel"><div className="panelHead"><div><h3>Creator Scanner Queue</h3><p>Pull products directly from the Scanner Queue sheet.</p></div><button className="ghost small" onClick={() => void loadScanner()}>Reload</button></div>
-              <div className="scannerList">{creatorScannerRows.slice(0, 12).map((row, idx) => { const n = Number(row._row_num || 0); const title = String(row["Product Name"] || row["Product"] || `Scanner product ${idx + 1}`); const selectedRow = scannerPick.has(n); return <label className={`scannerRow ${selectedRow ? "picked" : ""}`} key={`${n}-${idx}`}><input type="checkbox" checked={selectedRow} onChange={() => setScannerPick(prev => { const next = new Set(prev); selectedRow ? next.delete(n) : next.add(n); return next; })} /><div><b>{title}</b><span>{String(row["Creators"] || "")}</span></div></label>; })}{!creatorScannerRows.length && <div className="muted pad">No pending Creator Scanner products.</div>}</div>
+          <section className="grid3 importGrid">
+            <div className="panel">
+              <div className="panelHead">
+                <div><h3>Creator Scanner Queue</h3><p>Pull Creator Scanner products from the shared Scanner Queue sheet.</p></div>
+                <button className="ghost small" onClick={() => void loadScanner()}>Reload</button>
+              </div>
+              <div className="scannerList">
+                {creatorScannerRows.slice(0, 12).map((row, idx) => {
+                  const n = Number(row._row_num || 0);
+                  const title = String(row["Product Name"] || row["Product"] || `Scanner product ${idx + 1}`);
+                  const selectedRow = scannerPick.has(n);
+                  return <label className={`scannerRow ${selectedRow ? "picked" : ""}`} key={`${n}-${idx}`}>
+                    <input type="checkbox" checked={selectedRow} onChange={() => setScannerPick(prev => {
+                      const next = new Set(prev);
+                      selectedRow ? next.delete(n) : next.add(n);
+                      return next;
+                    })} />
+                    <div><b>{title}</b><span>{String(row["Creators"] || "")}</span></div>
+                  </label>;
+                })}
+                {!creatorScannerRows.length && <div className="muted pad">No pending Creator Scanner products.</div>}
+              </div>
               {String(selected.status || "open").toLowerCase() === "done" && <div className="doneNotice">This batch is done. Start or choose an open batch before importing more products.</div>}
-              <button className="primary full" disabled={!scannerPick.size || loading || String(selected.status || "open").toLowerCase() === "done"} onClick={importScanner}>Import selected ({scannerPick.size})</button>
+              <button className="primary full" disabled={!scannerPick.size || loading || String(selected.status || "open").toLowerCase() === "done"} onClick={importScanner}>
+                Import selected ({scannerPick.size})
+              </button>
             </div>
-            <div className="panel"><div className="panelHead"><div><h3>Import product links</h3><p>Paste one TikTok Shop product URL per line.</p></div></div><textarea className="linkBox" value={links} onChange={e => setLinks(e.target.value)} placeholder="https://www.tiktok.com/view/product/..." />{String(selected.status || "open").toLowerCase() === "done" && <div className="doneNotice">This batch is done. New product links are locked.</div>}<button className="primary full" disabled={!links.trim() || loading || String(selected.status || "open").toLowerCase() === "done"} onClick={importLinks}>Import products</button><div className="miniInfo"><b>Current batch</b><span>{selected.mode === "shoe_showcase" ? `${selected.creator_profile} hand · Dark luxury car · 3-frame editorial cut` : `${selected.creator_profile} · ${(selected.scene_pool?.length || 1)} background${(selected.scene_pool?.length || 1) === 1 ? "" : "s"} · ${(selected.motion_pool?.length || 1)} motion style${(selected.motion_pool?.length || 1) === 1 ? "" : "s"}`}</span></div></div>
+
+            <div className="panel sniperQueuePanel">
+              <div className="panelHead">
+                <div><h3>Momentum Sniper Queue</h3><p>Pick the avatar first, then import that Sniper run without mixing avatars.</p></div>
+                <button className="ghost small" onClick={() => void loadScanner()}>Reload</button>
+              </div>
+
+              {!sniperGroups.length ? (
+                <div className="sniperEmpty">
+                  <b>No pending Momentum Sniper runs.</b>
+                  <span>Use “Send to Fashion Flow” from Momentum Sniper and the run will appear here.</span>
+                </div>
+              ) : (
+                <div className="sniperRunGrid compactSniperGrid">
+                  {sniperGroups.map(group => {
+                    const avatarId = sniperAvatarByRun[group.id] || "";
+                    const avatar = savedAvatars.find(a => a.id === avatarId);
+                    const openAvatarBatches = avatar
+                      ? batches.filter(b =>
+                          b.mode !== "shoe_showcase" &&
+                          String(b.status || "open").toLowerCase() !== "done" &&
+                          String(b.avatar_name || "") === avatar.name
+                        )
+                      : [];
+                    const destination = sniperDestinationByRun[group.id] || (openAvatarBatches[0]?.id || "new");
+
+                    return <div className="sniperRunCard compactSniperCard" key={group.id}>
+                      <div className="sniperRunHead">
+                        <div>
+                          <b>{group.preset}</b>
+                          <span>{group.rows.length} product{group.rows.length === 1 ? "" : "s"} · {group.sourceFile || group.id}</span>
+                        </div>
+                        <span className="sourceBadge">Momentum Sniper</span>
+                      </div>
+
+                      <div className="sniperControls">
+                        <label>Avatar
+                          <select value={avatarId} onChange={e => {
+                            const value = e.target.value;
+                            setSniperAvatarByRun(prev => ({ ...prev, [group.id]: value }));
+                            setSniperDestinationByRun(prev => ({ ...prev, [group.id]: "" }));
+                          }}>
+                            <option value="">Choose saved avatar…</option>
+                            {savedAvatars.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                          </select>
+                        </label>
+
+                        <label>Creator profile
+                          <select value={sniperProfileByRun[group.id] || "Male"} onChange={e => setSniperProfileByRun(prev => ({ ...prev, [group.id]: e.target.value }))}>
+                            {profiles.map(x => <option key={x}>{x}</option>)}
+                          </select>
+                        </label>
+
+                        <label>Destination
+                          <select disabled={!avatar} value={destination} onChange={e => setSniperDestinationByRun(prev => ({ ...prev, [group.id]: e.target.value }))}>
+                            {openAvatarBatches.map(b => <option key={b.id} value={b.id}>Add to open: {b.name}</option>)}
+                            <option value="new">Start new {avatar?.name || "avatar"} batch</option>
+                          </select>
+                        </label>
+                      </div>
+
+                      {avatar && !openAvatarBatches.length && <div className="sniperHint">No open {avatar.name} batch exists, so this will start a new one.</div>}
+                      <button className="primary full" disabled={!avatar || loading} onClick={() => importSniperRun(group.id, group.rows)}>
+                        {destination === "new"
+                          ? `Start ${avatar?.name || "avatar"} batch with ${group.rows.length}`
+                          : `Add ${group.rows.length} to ${avatar?.name || "avatar"} batch`}
+                      </button>
+                    </div>;
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="panel">
+              <div className="panelHead"><div><h3>Import product links</h3><p>Paste one TikTok Shop product URL per line.</p></div></div>
+              <textarea className="linkBox" value={links} onChange={e => setLinks(e.target.value)} placeholder="https://www.tiktok.com/view/product/..." />
+              {String(selected.status || "open").toLowerCase() === "done" && <div className="doneNotice">This batch is done. New product links are locked.</div>}
+              <button className="primary full" disabled={!links.trim() || loading || String(selected.status || "open").toLowerCase() === "done"} onClick={importLinks}>Import products</button>
+              <div className="miniInfo"><b>Current batch</b><span>{selected.mode === "shoe_showcase" ? `${selected.creator_profile} hand · Dark luxury car · 3-frame editorial cut` : `${selected.creator_profile} · ${(selected.scene_pool?.length || 1)} background${(selected.scene_pool?.length || 1) === 1 ? "" : "s"} · ${(selected.motion_pool?.length || 1)} motion style${(selected.motion_pool?.length || 1) === 1 ? "" : "s"}`}</span></div>
+            </div>
           </section>
 
           <section className="panel production">
