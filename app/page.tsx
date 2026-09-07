@@ -445,7 +445,7 @@ export default function Home() {
   function canRepickPhotos(job: Job) {
     const imageFailed = ["failed", "error"].includes(String(job.image_status || "").toLowerCase());
     const stageFailed = String(job.stage || "").toLowerCase() === "failed";
-    return jobHasProductPhotos(job) && (imageFailed || stageFailed || !!job.image_error);
+    return jobHasProductPhotos(job) && (imageFailed || stageFailed || !!job.error);
   }
 
   function toggleRef(job: Job, url: string) {
