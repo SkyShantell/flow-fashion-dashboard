@@ -201,10 +201,14 @@ export default function Home() {
     return () => clearInterval(id);
   }, [loadBatches, loadSelected]);
   useEffect(() => {
-    if (!selected || photoJobId) return;
-    const imported = selected.jobs.find(j => j.stage === "imported" && !j.image_url);
-    if (imported) setPhotoJobId(imported.id);
-  }, [selected, photoJobId]);
+    if (!photoJobId) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setPhotoJobId(null);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [photoJobId]);
+
   useEffect(() => {
     if (!previewImage) return;
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setPreviewImage(null); };
@@ -718,8 +722,8 @@ export default function Home() {
           {batchMode === "fashion_tryon" && <label className="check wide"><input type="checkbox" checked={autoApprove} onChange={e => setAutoApprove(e.target.checked)} /> Auto-approve images and continue to video</label>}
         </div><div className="modalFoot"><button className="ghost" onClick={() => setShowCreate(false)}>Cancel</button><button className="primary" disabled={loading || (batchMode === "fashion_tryon" && !avatarB64)} onClick={createBatch}>{loading ? "Creating…" : batchMode === "shoe_showcase" ? "Create Shoe Showcase" : "Create batch"}</button></div></div></div>}
 
-        {photoJob && <div className="modalBackdrop"><div className="modal photoModal">
-          <div className="modalHead"><div><h2>Select product photos</h2><p className="modalSub">{photoJob.product_name || "Imported product"}</p></div><button className="iconBtn" onClick={() => setPhotoJobId(null)}>×</button></div>
+        {photoJob && <div className="modalBackdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setPhotoJobId(null); }}><div className="modal photoModal" onMouseDown={(e) => e.stopPropagation()}>
+          <div className="modalHead"><div><h2>Select product photos</h2><p className="modalSub">{photoJob.product_name || "Imported product"}</p></div><button type="button" className="iconBtn modalCloseBtn" aria-label="Close product photo picker" title="Close" onClick={() => setPhotoJobId(null)}>×</button></div>
           <div className="photoPickerTop"><div><b>{refsFor(photoJob).length} selected</b><span>{selected?.mode === "shoe_showcase" ? "Choose 1–5 images that show the exact shoe, colorway, sole, side profile and details clearly." : "Choose 1–5 images that show the exact product most clearly. Listing and review photos can be mixed."}</span></div><button className="ghost small" onClick={() => setRefPick(prev => ({ ...prev, [photoJob.id]: [] }))}>Clear</button></div>
           {selected?.mode === "shoe_showcase" ? <div className="preGenSettings shoePreGen"><div className="preGenHead"><b>Shoe Showcase</b><span>This item will use the dark-car shoe workflow from your reference videos and MD skill.</span></div><div className="shoeRuleGrid"><span>Shoe only</span><span>{selected.creator_profile || "Female"} hand</span><span>Dark luxury car</span><span>3 editorial frames</span><span>Exact start frames</span><span>FFmpeg cuts</span><span>No face / upper body / text</span></div></div> : <div className="preGenSettings"><div className="preGenHead"><b>Generation settings</b><span>Set these before generating. Product type controls framing; background controls the image; motion controls the video.</span></div><div className="preGenGrid">
             <label>Product type <span className="detectedTag">Detected: {productTypeLabel(photoJob.focus)}</span><select value={settingsFor(photoJob).focus} onChange={e => setJobSettings(prev => ({ ...prev, [photoJob.id]: { ...settingsFor(photoJob), focus: e.target.value } }))}>{productTypes.map(x => <option key={x.value} value={x.value}>{x.label}</option>)}</select></label>
