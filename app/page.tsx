@@ -438,6 +438,16 @@ export default function Home() {
     setPhotoJobId(job.id);
   }
 
+  function jobHasProductPhotos(job: Job) {
+    return !!((job.listing_images?.length || 0) + (job.review_images?.length || 0));
+  }
+
+  function canRepickPhotos(job: Job) {
+    const imageFailed = ["failed", "error"].includes(String(job.image_status || "").toLowerCase());
+    const stageFailed = String(job.stage || "").toLowerCase() === "failed";
+    return jobHasProductPhotos(job) && (imageFailed || stageFailed || !!job.image_error);
+  }
+
   function toggleRef(job: Job, url: string) {
     setRefPick(prev => {
       const current = prev[job.id] ?? job.selected_refs ?? [];
@@ -724,7 +734,7 @@ export default function Home() {
 
         {photoJob && <div className="modalBackdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setPhotoJobId(null); }}><div className="modal photoModal" onMouseDown={(e) => e.stopPropagation()}>
           <div className="modalHead"><div><h2>Select product photos</h2><p className="modalSub">{photoJob.product_name || "Imported product"}</p></div><button type="button" className="iconBtn modalCloseBtn" aria-label="Close product photo picker" title="Close" onClick={() => setPhotoJobId(null)}>×</button></div>
-          <div className="photoPickerTop"><div><b>{refsFor(photoJob).length} selected</b><span>{selected?.mode === "shoe_showcase" ? "Choose 1–5 images that show the exact shoe, colorway, sole, side profile and details clearly." : "Choose 1–5 images that show the exact product most clearly. Listing and review photos can be mixed."}</span></div><button className="ghost small" onClick={() => setRefPick(prev => ({ ...prev, [photoJob.id]: [] }))}>Clear</button></div>
+          <div className="photoPickerTop"><div><b>{refsFor(photoJob).length} selected</b><span>{selected?.mode === "shoe_showcase" ? "Choose 1–5 images that show the exact shoe, colorway, sole, side profile and details clearly." : "Choose 1–5 images that show the exact product most clearly. Listing and review photos can be mixed. If one photo caused a risky-image failure, deselect it and pick safer references."}</span></div><button className="ghost small" onClick={() => setRefPick(prev => ({ ...prev, [photoJob.id]: [] }))}>Clear</button></div>
           {selected?.mode === "shoe_showcase" ? <div className="preGenSettings shoePreGen"><div className="preGenHead"><b>Shoe Showcase</b><span>This item will use the dark-car shoe workflow from your reference videos and MD skill.</span></div><div className="shoeRuleGrid"><span>Shoe only</span><span>{selected.creator_profile || "Female"} hand</span><span>Dark luxury car</span><span>3 editorial frames</span><span>Exact start frames</span><span>FFmpeg cuts</span><span>No face / upper body / text</span></div></div> : <div className="preGenSettings"><div className="preGenHead"><b>Generation settings</b><span>Set these before generating. Product type controls framing; background controls the image; motion controls the video.</span></div><div className="preGenGrid">
             <label>Product type <span className="detectedTag">Detected: {productTypeLabel(photoJob.focus)}</span><select value={settingsFor(photoJob).focus} onChange={e => setJobSettings(prev => ({ ...prev, [photoJob.id]: { ...settingsFor(photoJob), focus: e.target.value } }))}>{productTypes.map(x => <option key={x.value} value={x.value}>{x.label}</option>)}</select></label>
             <label>Background<select value={settingsFor(photoJob).scene} onChange={e => setJobSettings(prev => ({ ...prev, [photoJob.id]: { ...settingsFor(photoJob), scene: e.target.value } }))}>{scenes.map(x => <option key={x}>{x}</option>)}</select></label>
@@ -915,9 +925,11 @@ export default function Home() {
 
                     <div className="jobMeta"><span>Image: {job.image_status}</span><span>Video: {job.video_status}</span><span>1080p: {job.upscale_status}</span></div>
                     {job.error && <div className="jobError">{job.error}</div>}
+                    {canRepickPhotos(job) && <div className="miniHint">If the image failed because one product photo was too risky, re-pick safer product photos and generate again.</div>}
                     <div className="jobActions">
                       {job.stage === "imported" && <button className="primary small" disabled={loading} onClick={() => openPhotoPicker(job)}>Select product photos</button>}
                       {job.stage === "ready_for_image" && <button className="primary small" disabled={loading} onClick={() => generateOneImage(job)}>{shoeMode ? "Generate editorial frames" : "Generate image"}</button>}
+                      {canRepickPhotos(job) && <button className="ghost small" disabled={loading} onClick={() => openPhotoPicker(job)}>Repick photos</button>}
                       {!shoeMode && job.image_status === "completed" && !job.approved && <button className="primary small" disabled={loading} onClick={() => approve(job)}>Approve + video</button>}
                       {!shoeMode && job.image_status === "completed" && <button className="ghost small" disabled={loading} onClick={() => openVideoPrompt(job)}>Video prompt</button>}
                       {job.stage === "failed" && <button className="dangerGhost small" disabled={loading} onClick={() => retry(job)}>Retry</button>}

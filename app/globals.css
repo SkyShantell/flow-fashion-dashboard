@@ -137,3 +137,11 @@
   .grid3{grid-template-columns:1fr}
   .importGrid>div:last-child{grid-column:auto}
 }
+
+/* V18.3: repick product photos after failure */
+.miniHint{
+  margin:8px 0 2px;
+  color:#9fb0c8;
+  font-size:12px;
+  line-height:1.45;
+}
