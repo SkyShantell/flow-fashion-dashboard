@@ -33,6 +33,7 @@ type Job = {
 type Batch = {
   id: string;
   name?: string | null;
+  avatar_name?: string | null;
   mode?: "fashion_tryon" | "shoe_showcase" | string;
   scene?: string | null;
   scene_pool?: string[];
@@ -72,6 +73,27 @@ type SavedAvatar = {
   name: string;
   image_b64: string;
   image_mime: string;
+};
+
+type SniperInboxProduct = {
+  name: string;
+  source_url: string;
+  sniper_meta?: Record<string, unknown>;
+};
+
+type SniperInboxBatch = {
+  id: string;
+  source_batch_id: string;
+  preset: string;
+  source_file?: string;
+  status: string;
+  product_count: number;
+  products: SniperInboxProduct[];
+  imported_batch_id?: string | null;
+  avatar_id?: string | null;
+  avatar_name?: string | null;
+  created_at?: string | null;
+  imported_at?: string | null;
 };
 
 const SHOE_SCENE = "Dark luxury car interior";
@@ -133,6 +155,9 @@ export default function Home() {
   const [avatarB64, setAvatarB64] = useState<string | null>(null);
   const [avatarMime, setAvatarMime] = useState("image/jpeg");
   const [savedAvatars, setSavedAvatars] = useState<SavedAvatar[]>([]);
+  const [sniperInbox, setSniperInbox] = useState<SniperInboxBatch[]>([]);
+  const [sniperAvatarChoice, setSniperAvatarChoice] = useState<Record<string, string>>({});
+  const [sniperProfileChoice, setSniperProfileChoice] = useState<Record<string, string>>({});
   const [selectedAvatarId, setSelectedAvatarId] = useState("");
   const [avatarName, setAvatarName] = useState("My Avatar");
   const [links, setLinks] = useState("");
@@ -172,12 +197,17 @@ export default function Home() {
     try { setScanner(await api<ScannerRow[]>("/scanner/pending?max_items=50")); } catch (e) { setError(e instanceof Error ? e.message : "Could not load scanner queue"); }
   }, []);
 
-  useEffect(() => { void loadHealth(); void loadBatches(); void loadScanner(); void loadAvatars(); }, [loadHealth, loadBatches, loadScanner, loadAvatars]);
+  const loadSniperInbox = useCallback(async () => {
+    try { setSniperInbox(await api<SniperInboxBatch[]>("/sniper/inbox?status=pending")); }
+    catch (e) { setError(e instanceof Error ? e.message : "Could not load Momentum Sniper inbox"); }
+  }, []);
+
+  useEffect(() => { void loadHealth(); void loadBatches(); void loadScanner(); void loadAvatars(); void loadSniperInbox(); }, [loadHealth, loadBatches, loadScanner, loadAvatars, loadSniperInbox]);
   useEffect(() => { void loadSelected(); }, [loadSelected]);
   useEffect(() => {
-    const id = setInterval(() => { void loadBatches(); void loadSelected(); }, 5000);
+    const id = setInterval(() => { void loadBatches(); void loadSelected(); void loadSniperInbox(); }, 5000);
     return () => clearInterval(id);
-  }, [loadBatches, loadSelected]);
+  }, [loadBatches, loadSelected, loadSniperInbox]);
   useEffect(() => {
     if (!selected || photoJobId) return;
     const imported = selected.jobs.find(j => j.stage === "imported" && !j.image_url);
@@ -257,7 +287,8 @@ export default function Home() {
           motion_pool: shoeMode ? [SHOE_MOTION] : motionPool,
           auto_approve: shoeMode ? false : autoApprove,
           avatar_b64: shoeMode ? null : avatarB64,
-          avatar_mime: avatarMime
+          avatar_mime: avatarMime,
+          avatar_name: shoeMode ? null : avatarName
         })
       });
       setSelectedId(batch.id); setSelected(batch); setShowCreate(false); await loadBatches();
@@ -330,6 +361,48 @@ export default function Home() {
       await api<Batch>(`/batches/${selectedId}/scanner/import`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ row_nums: rows, start_generation: false }) });
       setScannerPick(new Set()); await Promise.all([loadSelected(), loadScanner()]); flash(`${rows.length} scanner product(s) imported — choose product photos next`);
     } catch (e) { setError(e instanceof Error ? e.message : "Scanner import failed"); }
+    finally { setLoading(false); }
+  }
+
+  async function importSniperBatch(item: SniperInboxBatch) {
+    const avatarId = sniperAvatarChoice[item.id] || "";
+    if (!avatarId) { setError("Choose a saved avatar for this Momentum Sniper batch first."); return; }
+    const avatar = savedAvatars.find(a => a.id === avatarId);
+    if (!avatar) { setError("The selected avatar could not be found. Refresh and choose it again."); return; }
+    const creatorProfile = sniperProfileChoice[item.id] || "Male";
+    setLoading(true); setError("");
+    try {
+      const batch = await api<Batch>(`/sniper/inbox/${item.id}/import`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          avatar_id: avatarId,
+          creator_profile: creatorProfile,
+          batch_name: `${avatar.name} · ${item.preset || "Sniper"}`,
+          auto_approve: false,
+        }),
+      });
+      setSelectedId(batch.id);
+      setSelected(batch);
+      setSniperAvatarChoice(prev => { const next = { ...prev }; delete next[item.id]; return next; });
+      setSniperProfileChoice(prev => { const next = { ...prev }; delete next[item.id]; return next; });
+      await Promise.all([loadBatches(), loadSniperInbox()]);
+      flash(`Created ${avatar.name} batch with ${item.product_count} Momentum Sniper product(s)`);
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not import Momentum Sniper batch"); }
+    finally { setLoading(false); }
+  }
+
+  async function markBatchDone() {
+    if (!selectedId || !selected) return;
+    if (selected.status === "done") return;
+    if (!window.confirm(`Mark “${selected.name || "this batch"}” done? New products will be blocked from this batch.`)) return;
+    setLoading(true); setError("");
+    try {
+      const batch = await api<Batch>(`/batches/${selectedId}/done`, { method: "POST" });
+      setSelected(batch);
+      setBatches(prev => prev.map(b => b.id === batch.id ? batch : b));
+      flash("Batch marked done — new products can no longer be added to it");
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not mark batch done"); }
     finally { setLoading(false); }
   }
 
@@ -585,7 +658,7 @@ export default function Home() {
         <button className="primary full" onClick={() => setShowCreate(true)}>+ New batch</button>
         <div className="sideLabel">Batches</div>
         <div className="batchList">
-          {batches.map(b => <button key={b.id} className={`batchBtn ${selectedId === b.id ? "active" : ""}`} onClick={() => setSelectedId(b.id)}><b>{b.name || "Untitled batch"}</b><span>{b.mode === "shoe_showcase" ? "Shoe Showcase" : "Fashion Try-On"} · {Number(b.counts?.products || 0)} products · {b.status}</span></button>)}
+          {batches.map(b => <button key={b.id} className={`batchBtn ${selectedId === b.id ? "active" : ""}`} onClick={() => setSelectedId(b.id)}><b>{b.name || "Untitled batch"}</b><span>{b.mode === "shoe_showcase" ? "Shoe Showcase" : b.avatar_name ? `Fashion Try-On · ${b.avatar_name}` : "Fashion Try-On"} · {Number(b.counts?.products || 0)} products · {b.status}</span></button>)}
           {!batches.length && <div className="muted">No batches yet.</div>}
         </div>
         <div className="providerBox">
@@ -601,7 +674,7 @@ export default function Home() {
       <section className="content">
         <header className="topbar">
           <div><div className="eyebrow">{selected?.mode === "shoe_showcase" ? "AI SHOE SHOWCASE PRODUCTION" : "AI FASHION PRODUCTION"}</div><h1>{selected?.name || "Production Dashboard"}</h1><p>{health ? `${health.image_model} → ${health.video_model} → ${health.video_final_resolution}` : "Connecting to backend…"}</p></div>
-          <div className="topActions"><button className="ghost" onClick={() => { void loadBatches(); void loadSelected(); void loadScanner(); }}>Refresh</button><button className="ghost" disabled={!selectedId || loading || !health?.google_sheet} onClick={syncSheet}>Sync Sheet</button><button className="dangerGhost" disabled={!selectedId || loading} onClick={retryFailed}>Retry failed</button></div>
+          <div className="topActions"><button className="ghost" onClick={() => { void loadBatches(); void loadSelected(); void loadScanner(); void loadSniperInbox(); }}>Refresh</button><button className="ghost" disabled={!selectedId || loading || !health?.google_sheet} onClick={syncSheet}>Sync Sheet</button>{selected && <button className={selected.status === "done" ? "ghost" : "dangerGhost"} disabled={loading || selected.status === "done"} onClick={markBatchDone}>{selected.status === "done" ? "✓ Batch done" : "Mark batch done"}</button>}<button className="dangerGhost" disabled={!selectedId || loading} onClick={retryFailed}>Retry failed</button></div>
         </header>
 
         {(message || error) && <div className={error ? "toast error" : "toast"}>{error || message}</div>}
@@ -660,16 +733,35 @@ export default function Home() {
           </>}
         </div></div>}
 
+        <section className="panel sniperInboxPanel">
+          <div className="panelHead"><div><h3>🎯 Momentum Sniper Inbox</h3><p>Sniper winners wait here until you assign the correct saved avatar. Importing creates a new locked-to-that-avatar production batch.</p></div><button className="ghost small" onClick={() => void loadSniperInbox()}>Reload</button></div>
+          {!sniperInbox.length ? <div className="muted pad sniperEmpty">No Momentum Sniper batches waiting.</div> : <div className="sniperInboxGrid">{sniperInbox.map(item => {
+            const avatarId = sniperAvatarChoice[item.id] || "";
+            const chosenAvatar = savedAvatars.find(a => a.id === avatarId);
+            const creator = sniperProfileChoice[item.id] || "Male";
+            return <article className="sniperInboxCard" key={item.id}>
+              <div className="sniperInboxMeta"><div><b>{item.preset || "Sniper"}</b><span>{item.product_count} vetted product{item.product_count === 1 ? "" : "s"}{item.created_at ? ` · ${new Date(item.created_at).toLocaleString()}` : ""}</span></div><span className="sniperPendingBadge">WAITING</span></div>
+              <div className="sniperInboxPreview">{item.products.slice(0, 4).map((product, i) => <span key={`${item.id}-${i}`}>{product.name || `Product ${i + 1}`}</span>)}{item.products.length > 4 && <span>+{item.products.length - 4} more</span>}</div>
+              <div className="sniperInboxActions">
+                <label>Avatar name<select value={avatarId} onChange={e => setSniperAvatarChoice(prev => ({ ...prev, [item.id]: e.target.value }))}><option value="">Choose saved avatar…</option>{savedAvatars.map(avatar => <option value={avatar.id} key={`${item.id}-${avatar.id}`}>{avatar.name}</option>)}</select></label>
+                <label>Creator profile<select value={creator} onChange={e => setSniperProfileChoice(prev => ({ ...prev, [item.id]: e.target.value }))}>{profiles.map(x => <option value={x} key={`${item.id}-${x}`}>{x}</option>)}</select></label>
+              </div>
+              {!savedAvatars.length && <div className="sniperAvatarHint">No saved avatars yet. Use <b>+ New batch</b> once to save your avatar, then return here.</div>}
+              <button className="primary full" disabled={loading || !chosenAvatar} onClick={() => importSniperBatch(item)}>{chosenAvatar ? `Create ${chosenAvatar.name} batch` : "Choose avatar to import"}</button>
+            </article>;
+          })}</div>}
+        </section>
+
         {!selected ? <div className="empty"><h2>Create your first batch</h2><p>Your Railway worker is ready. Create a batch and send products into the production queue.</p><button className="primary" onClick={() => setShowCreate(true)}>Create batch</button></div> : <>
           <section className="metrics">{metrics.map(([label, value]) => <div className="metric" key={String(label)}><span>{label}</span><b>{value}</b></div>)}</section>
 
-          <section className="grid2">
+          {selected.status === "done" ? <section className="doneNotice"><div><b>✓ This batch is done</b><span>{selected.avatar_name ? `${selected.avatar_name} · ` : ""}New products are locked out of this batch. Its existing products, results and downloads stay available.</span></div></section> : <section className="grid2">
             <div className="panel"><div className="panelHead"><div><h3>Creator Scanner Queue</h3><p>Pull products directly from the Scanner Queue sheet.</p></div><button className="ghost small" onClick={() => void loadScanner()}>Reload</button></div>
               <div className="scannerList">{scanner.slice(0, 12).map((row, idx) => { const n = Number(row._row_num || 0); const title = String(row["Product Name"] || row["Product"] || `Scanner product ${idx + 1}`); const selectedRow = scannerPick.has(n); return <label className={`scannerRow ${selectedRow ? "picked" : ""}`} key={`${n}-${idx}`}><input type="checkbox" checked={selectedRow} onChange={() => setScannerPick(prev => { const next = new Set(prev); selectedRow ? next.delete(n) : next.add(n); return next; })} /><div><b>{title}</b><span>{String(row["Creators"] || "")}</span></div></label>; })}{!scanner.length && <div className="muted pad">No pending scanner products.</div>}</div>
               <button className="primary full" disabled={!scannerPick.size || loading} onClick={importScanner}>Import selected ({scannerPick.size})</button>
             </div>
-            <div className="panel"><div className="panelHead"><div><h3>Import product links</h3><p>Paste one TikTok Shop product URL per line.</p></div></div><textarea className="linkBox" value={links} onChange={e => setLinks(e.target.value)} placeholder="https://www.tiktok.com/view/product/..." /><button className="primary full" disabled={!links.trim() || loading} onClick={importLinks}>Import products</button><div className="miniInfo"><b>Current batch</b><span>{selected.mode === "shoe_showcase" ? `${selected.creator_profile} hand · Dark luxury car · 3-frame editorial cut` : `${selected.creator_profile} · ${(selected.scene_pool?.length || 1)} background${(selected.scene_pool?.length || 1) === 1 ? "" : "s"} · ${(selected.motion_pool?.length || 1)} motion style${(selected.motion_pool?.length || 1) === 1 ? "" : "s"}`}</span></div></div>
-          </section>
+            <div className="panel"><div className="panelHead"><div><h3>Import product links</h3><p>Paste one TikTok Shop product URL per line.</p></div></div><textarea className="linkBox" value={links} onChange={e => setLinks(e.target.value)} placeholder="https://www.tiktok.com/view/product/..." /><button className="primary full" disabled={!links.trim() || loading} onClick={importLinks}>Import products</button><div className="miniInfo"><b>Current batch</b><span>{selected.avatar_name ? `${selected.avatar_name} · ` : ""}{selected.mode === "shoe_showcase" ? `${selected.creator_profile} hand · Dark luxury car · 3-frame editorial cut` : `${selected.creator_profile} · ${(selected.scene_pool?.length || 1)} background${(selected.scene_pool?.length || 1) === 1 ? "" : "s"} · ${(selected.motion_pool?.length || 1)} motion style${(selected.motion_pool?.length || 1) === 1 ? "" : "s"}`}</span></div></div>
+          </section>}
 
           <section className="panel production">
             <div className="panelHead productionHead">
