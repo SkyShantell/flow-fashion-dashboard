@@ -34,6 +34,7 @@ type Batch = {
   id: string;
   name?: string | null;
   avatar_name?: string | null;
+  flow_account_email?: string | null;
   mode?: "fashion_tryon" | "shoe_showcase" | string;
   scene?: string | null;
   scene_pool?: string[];
@@ -73,6 +74,15 @@ type SavedAvatar = {
   name: string;
   image_b64: string;
   image_mime: string;
+};
+
+type FlowAccount = {
+  email: string;
+  health: string;
+  credits: number | null;
+  paygate_tier: string;
+  created?: string | null;
+  session_expiry?: string | null;
 };
 
 const SHOE_SCENE = "Dark luxury car interior";
@@ -116,6 +126,9 @@ function stageLabel(stage: string) {
 
 export default function Home() {
   const [health, setHealth] = useState<Health | null>(null);
+  const [flowAccounts, setFlowAccounts] = useState<FlowAccount[]>([]);
+  const [flowAccountsLoading, setFlowAccountsLoading] = useState(false);
+  const [newFlowAccountEmail, setNewFlowAccountEmail] = useState("");
   const [batches, setBatches] = useState<Batch[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
   const [selected, setSelected] = useState<Batch | null>(null);
@@ -159,6 +172,13 @@ export default function Home() {
     try { setHealth(await api<Health>("/health")); } catch (e) { setError(e instanceof Error ? e.message : "Health check failed"); }
   }, []);
 
+  const loadFlowAccounts = useCallback(async () => {
+    setFlowAccountsLoading(true);
+    try { setFlowAccounts(await api<FlowAccount[]>("/api/flow/accounts")); }
+    catch (e) { setError(e instanceof Error ? e.message : "Could not load Flow accounts"); }
+    finally { setFlowAccountsLoading(false); }
+  }, []);
+
   const loadBatches = useCallback(async () => {
     try {
       const data = await api<Batch[]>("/batches");
@@ -194,7 +214,7 @@ export default function Home() {
     })).sort((a, b) => b.queuedAt.localeCompare(a.queuedAt));
   }, [scanner]);
 
-  useEffect(() => { void loadHealth(); void loadBatches(); void loadScanner(); void loadAvatars(); }, [loadHealth, loadBatches, loadScanner, loadAvatars]);
+  useEffect(() => { void loadHealth(); void loadFlowAccounts(); void loadBatches(); void loadScanner(); void loadAvatars(); }, [loadHealth, loadFlowAccounts, loadBatches, loadScanner, loadAvatars]);
   useEffect(() => { void loadSelected(); }, [loadSelected]);
   useEffect(() => {
     const id = setInterval(() => { void loadBatches(); void loadSelected(); }, 5000);
@@ -284,7 +304,8 @@ export default function Home() {
           auto_approve: shoeMode ? false : autoApprove,
           avatar_b64: shoeMode ? null : avatarB64,
           avatar_mime: avatarMime,
-          avatar_name: shoeMode ? null : (avatarName.trim() || "My Avatar")
+          avatar_name: shoeMode ? null : (avatarName.trim() || "My Avatar"),
+          flow_account_email: newFlowAccountEmail || null
         })
       });
       setSelectedId(batch.id); setSelected(batch); setShowCreate(false); await loadBatches();
@@ -398,6 +419,7 @@ export default function Home() {
             avatar_b64: avatar.image_b64,
             avatar_mime: avatar.image_mime || "image/jpeg",
             avatar_name: avatar.name,
+            flow_account_email: null,
           }),
         });
       }
@@ -412,6 +434,22 @@ export default function Home() {
       await Promise.all([loadBatches(), loadScanner()]);
       flash(`${rowNums.length} Sniper product(s) pulled into ${avatar.name} · ${imported.name || "batch"}`);
     } catch (e) { setError(e instanceof Error ? e.message : "Sniper import failed"); }
+    finally { setLoading(false); }
+  }
+
+  async function updateSelectedFlowAccount(email: string) {
+    if (!selectedId) return;
+    setLoading(true); setError("");
+    try {
+      const batch = await api<Batch>(`/batches/${selectedId}/flow-account`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ flow_account_email: email || null }),
+      });
+      setSelected(batch);
+      setBatches(prev => prev.map(b => b.id === batch.id ? batch : b));
+      flash(email ? `Flow account set to ${email}` : "Flow account set to Automatic / load balance");
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not update Flow account"); }
     finally { setLoading(false); }
   }
 
@@ -687,7 +725,7 @@ export default function Home() {
     <main className="shell">
       <aside className="sidebar">
         <div className="brand"><div className="brandMark">F</div><div><b>Flow Fashion</b><span>Production Factory</span></div></div>
-        <button className="primary full" onClick={() => setShowCreate(true)}>+ New batch</button>
+        <button className="primary full" onClick={() => { setNewFlowAccountEmail(""); setShowCreate(true); }}>+ New batch</button>
         <div className="sideLabel">Batches</div>
         <div className="batchList">
           {batches.map(b => <button key={b.id} className={`batchBtn ${selectedId === b.id ? "active" : ""}`} onClick={() => setSelectedId(b.id)}><b>{b.name || "Untitled batch"}</b><span>{b.mode === "shoe_showcase" ? "Shoe Showcase" : (b.avatar_name ? `Fashion Try-On · ${b.avatar_name}` : "Fashion Try-On")} · {Number(b.counts?.products || 0)} products · {b.status}</span></button>)}
@@ -706,10 +744,32 @@ export default function Home() {
       <section className="content">
         <header className="topbar">
           <div><div className="eyebrow">{selected?.mode === "shoe_showcase" ? "AI SHOE SHOWCASE PRODUCTION" : "AI FASHION PRODUCTION"}</div><h1>{selected?.name || "Production Dashboard"}</h1><p>{health ? `${health.image_model} → ${health.video_model} → ${health.video_final_resolution}` : "Connecting to backend…"}</p></div>
-          <div className="topActions"><button className="ghost" onClick={() => { void loadBatches(); void loadSelected(); void loadScanner(); }}>Refresh</button><button className="ghost" disabled={!selectedId || loading || !health?.google_sheet} onClick={syncSheet}>Sync Sheet</button>{selectedId && selected && String(selected.status || "open").toLowerCase() !== "done" ? <button className="ghost" disabled={loading} onClick={markBatchDone}>Mark batch done</button> : selectedId && selected ? <button className="ghost" disabled>Batch done</button> : null}<button className="dangerGhost" disabled={!selectedId || loading} onClick={retryFailed}>Retry failed</button></div>
+          <div className="topActions"><button className="ghost" onClick={() => { void loadBatches(); void loadSelected(); void loadScanner(); void loadFlowAccounts(); }}>Refresh</button><button className="ghost" disabled={!selectedId || loading || !health?.google_sheet} onClick={syncSheet}>Sync Sheet</button>{selectedId && selected && String(selected.status || "open").toLowerCase() !== "done" ? <button className="ghost" disabled={loading} onClick={markBatchDone}>Mark batch done</button> : selectedId && selected ? <button className="ghost" disabled>Batch done</button> : null}<button className="dangerGhost" disabled={!selectedId || loading} onClick={retryFailed}>Retry failed</button></div>
         </header>
 
         {(message || error) && <div className={error ? "toast error" : "toast"}>{error || message}</div>}
+
+        <section className="panel flowAccountPanel">
+          <div className="panelHead flowAccountHead">
+            <div><h3>Flow accounts</h3><p>Choose Automatic to let UseAPI load-balance, or lock this batch to one connected Google Flow account.</p></div>
+            <div className="flowAccountControls">
+              {selected && <label>Flow Account
+                <select value={selected.flow_account_email || ""} disabled={loading} onChange={e => void updateSelectedFlowAccount(e.target.value)}>
+                  <option value="">Automatic / load balance</option>
+                  {flowAccounts.map(account => <option key={account.email} value={account.email}>{account.email}</option>)}
+                </select>
+              </label>}
+              <button className="ghost small" disabled={flowAccountsLoading} onClick={() => void loadFlowAccounts()}>{flowAccountsLoading ? "Refreshing…" : "Refresh account status"}</button>
+            </div>
+          </div>
+          <div className="flowAccountGrid">
+            {flowAccounts.map(account => <div className="flowAccountCard" key={account.email}>
+              <div className="flowAccountEmail"><span className={pillClass(String(account.health || "").toUpperCase() === "OK")}></span><b>{account.email}</b></div>
+              <div className="flowAccountStats"><span><small>Health</small><b>{account.health || "Unknown"}</b></span><span><small>Credits</small><b>{account.credits ?? "—"}</b></span><span><small>Paygate tier</small><b>{account.paygate_tier || "—"}</b></span></div>
+            </div>)}
+            {!flowAccountsLoading && !flowAccounts.length && <div className="muted">No Flow accounts returned by UseAPI.</div>}
+          </div>
+        </section>
 
         {showCreate && <div className="modalBackdrop"><div className="modal batchSettingsModal"><div className="modalHead"><div><h2>Create production batch</h2><p className="modalSub">Choose the workflow first. Shoe Showcase uses the exact dark-car, hands-only reference style and does not use an avatar.</p></div><button className="iconBtn" onClick={() => setShowCreate(false)}>×</button></div><div className="formGrid">
           <div className="wide settingBlock"><div className="settingLabel"><b>Workflow</b><span>These are separate generation pipelines.</span></div><div className="modeChoiceGrid">
@@ -717,6 +777,7 @@ export default function Home() {
             <button type="button" className={batchMode === "shoe_showcase" ? "modeChoice selected" : "modeChoice"} onClick={() => { setBatchMode("shoe_showcase"); if (name === "Today's Fashion Batch") setName("Today's Shoe Showcase"); setProfile("Female"); }}><b>Shoe Showcase</b><span>Dark luxury car · 3 reviewed start frames · 3 Omni clips · FFmpeg editorial cut.</span></button>
           </div></div>
           <label>Batch name<input value={name} onChange={e => setName(e.target.value)} /></label>
+          <label>Flow Account<select value={newFlowAccountEmail} onChange={e => setNewFlowAccountEmail(e.target.value)}><option value="">Automatic / load balance</option>{flowAccounts.map(account => <option key={account.email} value={account.email}>{account.email}</option>)}</select></label>
           <label>{batchMode === "shoe_showcase" ? "Hand style" : "Creator"}<select value={profile} onChange={e => changeProfile(e.target.value)}>{profiles.map(x => <option key={x}>{x}</option>)}</select></label>
           {batchMode === "shoe_showcase" ? <>
             <div className="wide shoeLockedPanel"><div><b>Shoe Showcase defaults</b><span>Locked to the reference-video style you supplied.</span></div><div className="shoeRuleGrid"><span>Dark luxury car</span><span>Hand / foot / lower leg only</span><span>Close-up shoe hero</span><span>3 start frames</span><span>3 × 4s Omni clips</span><span>FFmpeg hard cuts</span><span>~10 sec final</span><span>Silent</span><span>No rendered text</span></div></div>
@@ -765,7 +826,7 @@ export default function Home() {
           </>}
         </div></div>}
 
-        {!selected ? <div className="empty"><h2>Create your first batch</h2><p>Your Railway worker is ready. Create a batch and send products into the production queue.</p><button className="primary" onClick={() => setShowCreate(true)}>Create batch</button></div> : <>
+        {!selected ? <div className="empty"><h2>Create your first batch</h2><p>Your Railway worker is ready. Create a batch and send products into the production queue.</p><button className="primary" onClick={() => { setNewFlowAccountEmail(""); setShowCreate(true); }}>Create batch</button></div> : <>
           <section className="metrics">{metrics.map(([label, value]) => <div className="metric" key={String(label)}><span>{label}</span><b>{value}</b></div>)}</section>
 
           <section className="grid3 importGrid">
