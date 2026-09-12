@@ -18,6 +18,28 @@ type BatchLite = {
   jobs: JobLite[];
 };
 
+type OverlayPreset = { id: string; label: string; description: string };
+type OverlayColor = { id: string; hex: string };
+type OverlayPlacement = { id: string; label: string };
+type OverlayConfig = {
+  headline: string;
+  subheadline: string;
+  preset: string;
+  emoji_prefix: string;
+  emoji_suffix: string;
+  headline_color: string;
+  subheadline_color: string;
+  placement: string;
+  presets: OverlayPreset[];
+  colors: OverlayColor[];
+  placements: OverlayPlacement[];
+};
+
+type OverlayDraft = Pick<
+  OverlayConfig,
+  "headline" | "subheadline" | "preset" | "emoji_prefix" | "emoji_suffix" | "headline_color" | "subheadline_color" | "placement"
+>;
+
 async function backend<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api/backend${path}`, { ...init, cache: "no-store" });
   const text = await res.text();
@@ -36,6 +58,21 @@ function sameTargets(a: HTMLElement[], b: HTMLElement[]) {
   return a.length === b.length && a.every((node, index) => node === b[index]);
 }
 
+function previewFont(preset: string, line: "headline" | "subheadline") {
+  if (preset === "luxury_serif") return line === "headline"
+    ? { fontFamily: "Georgia, serif", fontStyle: "italic", fontWeight: 400, fontSize: 33 }
+    : { fontFamily: "Georgia, serif", fontStyle: "normal", fontWeight: 400, fontSize: 22, textTransform: "uppercase" as const };
+  if (preset === "big_editorial") return line === "headline"
+    ? { fontFamily: "Georgia, serif", fontStyle: "normal", fontWeight: 400, fontSize: 42 }
+    : { fontFamily: "Georgia, serif", fontStyle: "normal", fontWeight: 400, fontSize: 22 };
+  if (preset === "serif_pop") return line === "headline"
+    ? { fontFamily: "Georgia, serif", fontStyle: "normal", fontWeight: 400, fontSize: 36 }
+    : { fontFamily: "Arial Rounded MT Bold, Arial, sans-serif", fontStyle: "normal", fontWeight: 800, fontSize: 22 };
+  return line === "headline"
+    ? { fontFamily: "Arial, sans-serif", fontStyle: "normal", fontWeight: 800, fontSize: 28 }
+    : { fontFamily: "Arial, sans-serif", fontStyle: "normal", fontWeight: 500, fontSize: 20 };
+}
+
 export default function ManualFFmpegControl() {
   const [batches, setBatches] = useState<BatchLite[]>([]);
   const [batchId, setBatchId] = useState("");
@@ -43,6 +80,10 @@ export default function ManualFFmpegControl() {
   const [targets, setTargets] = useState<HTMLElement[]>([]);
   const [busyJob, setBusyJob] = useState("");
   const [error, setError] = useState("");
+  const [editorJob, setEditorJob] = useState<JobLite | null>(null);
+  const [editorConfig, setEditorConfig] = useState<OverlayConfig | null>(null);
+  const [draft, setDraft] = useState<OverlayDraft | null>(null);
+  const [loadingEditor, setLoadingEditor] = useState(false);
 
   const loadBatches = useCallback(async () => {
     try {
@@ -102,11 +143,46 @@ export default function ManualFFmpegControl() {
     return () => window.clearInterval(timer);
   }, [batchId]);
 
-  async function sendToFFmpeg(job: JobLite) {
-    setBusyJob(job.id);
+  async function openEditor(job: JobLite) {
+    setEditorJob(job);
+    setEditorConfig(null);
+    setDraft(null);
+    setLoadingEditor(true);
     setError("");
     try {
-      await backend(`/jobs/${job.id}/apply-text-overlay`, { method: "POST" });
+      const config = await backend<OverlayConfig>(`/jobs/${job.id}/text-overlay-config`);
+      setEditorConfig(config);
+      setDraft({
+        headline: config.headline || "",
+        subheadline: config.subheadline || "",
+        preset: config.preset || "luxury_serif",
+        emoji_prefix: config.emoji_prefix || "",
+        emoji_suffix: config.emoji_suffix || "",
+        headline_color: config.headline_color || "white",
+        subheadline_color: config.subheadline_color || "white",
+        placement: config.placement || "middle",
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not open text styling");
+      setEditorJob(null);
+    } finally {
+      setLoadingEditor(false);
+    }
+  }
+
+  async function sendToFFmpeg() {
+    if (!editorJob || !draft) return;
+    setBusyJob(editorJob.id);
+    setError("");
+    try {
+      await backend(`/jobs/${editorJob.id}/apply-text-overlay`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(draft),
+      });
+      setEditorJob(null);
+      setEditorConfig(null);
+      setDraft(null);
       await loadActive(batchId);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not send video to FFmpeg");
@@ -134,15 +210,15 @@ export default function ManualFFmpegControl() {
               type="button"
               className="primary small"
               disabled={busy}
-              onClick={() => void sendToFFmpeg(job)}
-              title="Add the selected on-screen hook with FFmpeg after reviewing the returned video"
+              onClick={() => void openEditor(job)}
+              title="Choose text style, colors and emoji, then render with FFmpeg"
             >
-              {busy ? "Sending…" : "Send to FFmpeg"}
+              {busy ? "Sending…" : "Style + FFmpeg"}
             </button>
           )}
           {processing && (
             <span style={{ alignSelf: "center", fontSize: 11, color: "#aaa", padding: "0 4px" }}>
-              FFmpeg adding text…
+              FFmpeg adding styled text…
             </span>
           )}
           {finished && (
@@ -156,8 +232,95 @@ export default function ManualFFmpegControl() {
     });
   }, [activeBatch, busyJob, targets]);
 
+  const headlineHex = editorConfig?.colors.find(color => color.id === draft?.headline_color)?.hex || "#fff";
+  const subheadlineHex = editorConfig?.colors.find(color => color.id === draft?.subheadline_color)?.hex || "#fff";
+  const placementAlign = draft?.placement === "upper" ? "flex-start" : draft?.placement === "lower" ? "flex-end" : "center";
+
   return <>
     {portals}
-    {error && <div style={{ position: "fixed", left: 18, bottom: 18, zIndex: 10070, maxWidth: 420, border: "1px solid rgba(255,100,100,.35)", borderRadius: 12, background: "rgba(32,12,15,.96)", color: "#ffb5b5", padding: "10px 12px", fontSize: 12 }}>{error}</div>}
+
+    {editorJob && (
+      <div
+        onMouseDown={e => { if (e.target === e.currentTarget && !busyJob) setEditorJob(null); }}
+        style={{ position: "fixed", inset: 0, zIndex: 10100, background: "rgba(0,0,0,.72)", display: "grid", placeItems: "center", padding: 20 }}
+      >
+        <div style={{ width: "min(880px, 96vw)", maxHeight: "92vh", overflow: "auto", border: "1px solid rgba(255,255,255,.14)", borderRadius: 20, background: "#111116", color: "#fff", boxShadow: "0 30px 90px rgba(0,0,0,.55)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "18px 20px", borderBottom: "1px solid rgba(255,255,255,.1)" }}>
+            <div><div style={{ fontSize: 11, letterSpacing: ".11em", opacity: .55, textTransform: "uppercase" }}>Text + Emoji</div><div style={{ fontSize: 18, fontWeight: 850, marginTop: 3 }}>{editorJob.product_name || "Video overlay"}</div></div>
+            <button type="button" onClick={() => !busyJob && setEditorJob(null)} style={{ border: 0, background: "transparent", color: "#aaa", fontSize: 26, cursor: "pointer" }}>×</button>
+          </div>
+
+          {loadingEditor || !draft || !editorConfig ? (
+            <div style={{ padding: 30, color: "#aaa" }}>Loading styles…</div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1.05fr) minmax(280px,.95fr)", gap: 18, padding: 20 }}>
+              <div style={{ display: "grid", gap: 14 }}>
+                <label style={{ display: "grid", gap: 6, fontSize: 12, color: "#bbb" }}>Headline
+                  <input value={draft.headline} maxLength={120} onChange={e => setDraft({ ...draft, headline: e.target.value })} style={{ background: "#1d1d24", color: "#fff", border: "1px solid #34343d", borderRadius: 10, padding: "10px 11px", font: "inherit" }} />
+                </label>
+                <label style={{ display: "grid", gap: 6, fontSize: 12, color: "#bbb" }}>Second line <span style={{ opacity: .55 }}>optional</span>
+                  <input value={draft.subheadline} maxLength={120} onChange={e => setDraft({ ...draft, subheadline: e.target.value })} style={{ background: "#1d1d24", color: "#fff", border: "1px solid #34343d", borderRadius: 10, padding: "10px 11px", font: "inherit" }} />
+                </label>
+
+                <div style={{ display: "grid", gap: 7 }}>
+                  <div style={{ fontSize: 12, color: "#bbb" }}>Style preset</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    {editorConfig.presets.map(preset => (
+                      <button key={preset.id} type="button" onClick={() => setDraft({ ...draft, preset: preset.id })} style={{ textAlign: "left", border: draft.preset === preset.id ? "1px solid #8a6cff" : "1px solid #34343d", background: draft.preset === preset.id ? "rgba(123,92,255,.16)" : "#1d1d24", color: "#fff", borderRadius: 10, padding: 10, cursor: "pointer" }}>
+                        <b style={{ display: "block", fontSize: 12 }}>{preset.label}</b><span style={{ display: "block", color: "#8e8e99", fontSize: 10.5, lineHeight: 1.35, marginTop: 3 }}>{preset.description}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <label style={{ display: "grid", gap: 6, fontSize: 12, color: "#bbb" }}>Emoji before headline
+                    <input value={draft.emoji_prefix} onChange={e => setDraft({ ...draft, emoji_prefix: e.target.value })} placeholder="🤎 🍂" style={{ background: "#1d1d24", color: "#fff", border: "1px solid #34343d", borderRadius: 10, padding: "10px 11px", font: "inherit" }} />
+                  </label>
+                  <label style={{ display: "grid", gap: 6, fontSize: 12, color: "#bbb" }}>Emoji after headline
+                    <input value={draft.emoji_suffix} onChange={e => setDraft({ ...draft, emoji_suffix: e.target.value })} placeholder="🤎" style={{ background: "#1d1d24", color: "#fff", border: "1px solid #34343d", borderRadius: 10, padding: "10px 11px", font: "inherit" }} />
+                  </label>
+                </div>
+                <div style={{ fontSize: 10.5, color: "#777", marginTop: -7 }}>Separate multiple emoji with spaces. They render as color emoji graphics, not font glyphs.</div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+                  <label style={{ display: "grid", gap: 6, fontSize: 12, color: "#bbb" }}>Headline color
+                    <select value={draft.headline_color} onChange={e => setDraft({ ...draft, headline_color: e.target.value })} style={{ background: "#1d1d24", color: "#fff", border: "1px solid #34343d", borderRadius: 10, padding: "9px" }}>{editorConfig.colors.map(color => <option key={color.id} value={color.id}>{color.id.replaceAll("_", " ")}</option>)}</select>
+                  </label>
+                  <label style={{ display: "grid", gap: 6, fontSize: 12, color: "#bbb" }}>Second-line color
+                    <select value={draft.subheadline_color} onChange={e => setDraft({ ...draft, subheadline_color: e.target.value })} style={{ background: "#1d1d24", color: "#fff", border: "1px solid #34343d", borderRadius: 10, padding: "9px" }}>{editorConfig.colors.map(color => <option key={color.id} value={color.id}>{color.id.replaceAll("_", " ")}</option>)}</select>
+                  </label>
+                  <label style={{ display: "grid", gap: 6, fontSize: 12, color: "#bbb" }}>Placement
+                    <select value={draft.placement} onChange={e => setDraft({ ...draft, placement: e.target.value })} style={{ background: "#1d1d24", color: "#fff", border: "1px solid #34343d", borderRadius: 10, padding: "9px" }}>{editorConfig.placements.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select>
+                  </label>
+                </div>
+              </div>
+
+              <div style={{ display: "grid", alignContent: "start", gap: 9 }}>
+                <div style={{ fontSize: 12, color: "#bbb" }}>Layout preview</div>
+                <div style={{ aspectRatio: "9 / 16", maxHeight: 560, width: "100%", borderRadius: 16, border: "1px solid #34343d", background: "linear-gradient(155deg,#3c3a3e 0%,#17171b 48%,#302822 100%)", display: "flex", flexDirection: "column", justifyContent: placementAlign, alignItems: "center", padding: "14% 8%", overflow: "hidden", boxShadow: "inset 0 0 90px rgba(0,0,0,.3)" }}>
+                  <div style={{ width: "100%", textAlign: "center", textShadow: "0 2px 8px rgba(0,0,0,.65)" }}>
+                    <div style={{ ...previewFont(draft.preset, "headline"), color: headlineHex, lineHeight: 1.05, overflowWrap: "anywhere" }}>
+                      {draft.emoji_prefix && <span style={{ fontSize: ".72em", marginRight: ".12em" }}>{draft.emoji_prefix}</span>}
+                      {draft.headline || "Headline"}
+                      {draft.emoji_suffix && <span style={{ fontSize: ".72em", marginLeft: ".12em" }}>{draft.emoji_suffix}</span>}
+                    </div>
+                    {draft.subheadline && <div style={{ ...previewFont(draft.preset, "subheadline"), color: subheadlineHex, lineHeight: 1.08, marginTop: 6, overflowWrap: "anywhere" }}>{draft.subheadline}</div>}
+                  </div>
+                </div>
+                <div style={{ fontSize: 10.5, color: "#777", lineHeight: 1.4 }}>Preview shows layout and hierarchy. The final render uses the server fonts and color emoji assets over the real video.</div>
+              </div>
+            </div>
+          )}
+
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 9, padding: "14px 20px 18px", borderTop: "1px solid rgba(255,255,255,.1)" }}>
+            <button type="button" className="ghost" disabled={!!busyJob} onClick={() => setEditorJob(null)}>Cancel</button>
+            <button type="button" className="primary" disabled={!!busyJob || loadingEditor || !draft || (!draft.headline.trim() && !draft.subheadline.trim())} onClick={() => void sendToFFmpeg()}>{busyJob ? "Sending…" : "Send to FFmpeg"}</button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {error && <div style={{ position: "fixed", left: 18, bottom: 18, zIndex: 10120, maxWidth: 420, border: "1px solid rgba(255,100,100,.35)", borderRadius: 12, background: "rgba(32,12,15,.96)", color: "#ffb5b5", padding: "10px 12px", fontSize: 12 }}>{error}</div>}
   </>;
 }
