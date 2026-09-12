@@ -23,6 +23,7 @@ type ProviderConfig = {
   kling_multi_shot: boolean;
   aspect_ratio: string;
   automatic_fallback: boolean;
+  locked_for_shoes?: boolean;
 };
 
 async function backend<T>(path: string, init?: RequestInit): Promise<T> {
@@ -85,7 +86,7 @@ export default function VideoProviderControl() {
   useEffect(() => { void loadConfig(batchId); }, [batchId, loadConfig]);
 
   // Keep this control synchronized with the batch selected in the existing sidebar without
-  // changing the dashboard's established batch-selection code. Both lists use the same API order.
+  // changing the dashboard's established batch-selection code.
   useEffect(() => {
     if (!batches.length) return;
     const syncFromSidebar = () => {
@@ -141,7 +142,7 @@ export default function VideoProviderControl() {
           backdropFilter: "blur(14px)", WebkitBackdropFilter: "blur(14px)",
         }}
       >
-        Video · {isKling ? "Kling 3.0" : "Google Flow"}
+        Video · {isShoe ? "Kling O1" : isKling ? "Kling 3.0" : "Google Flow"}
       </button>
     );
   }
@@ -158,7 +159,7 @@ export default function VideoProviderControl() {
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
         <div>
           <div style={{ fontSize: 11, letterSpacing: ".11em", textTransform: "uppercase", opacity: .6 }}>Video Provider</div>
-          <div style={{ fontSize: 15, fontWeight: 800, marginTop: 2 }}>Choose Flow or Kling</div>
+          <div style={{ fontSize: 15, fontWeight: 800, marginTop: 2 }}>{isShoe ? "Shoe Showcase · Kling O1" : "Choose Flow or Kling"}</div>
         </div>
         <button type="button" onClick={() => setOpen(false)} aria-label="Minimize video provider selector" style={{ border: 0, background: "transparent", color: "#aaa", fontSize: 20, cursor: "pointer", lineHeight: 1 }}>−</button>
       </div>
@@ -174,41 +175,52 @@ export default function VideoProviderControl() {
         </select>
       </label>}
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 12 }}>
-        <button
-          type="button"
-          disabled={loading || !batchId}
-          onClick={() => void chooseProvider("omni")}
-          style={{
-            border: !isKling ? "1px solid #8a6cff" : "1px solid #3a3a43",
-            background: !isKling ? "rgba(123,92,255,.22)" : "#202027",
-            color: "#fff", borderRadius: 11, padding: "10px 8px", fontWeight: 800,
-            cursor: loading ? "wait" : "pointer",
-          }}
-        >Google Flow</button>
-        <button
-          type="button"
-          disabled={loading || !batchId || isShoe}
-          onClick={() => void chooseProvider("kling")}
-          title={isShoe ? "Shoe Showcase uses its dedicated Google Flow editorial pipeline" : "Use Kling 3.0 for approved-image video generation"}
-          style={{
-            border: isKling ? "1px solid #8a6cff" : "1px solid #3a3a43",
-            background: isKling ? "rgba(123,92,255,.22)" : "#202027",
-            color: isShoe ? "#777" : "#fff", borderRadius: 11, padding: "10px 8px", fontWeight: 800,
-            cursor: isShoe ? "not-allowed" : loading ? "wait" : "pointer",
-          }}
-        >Kling 3.0</button>
-      </div>
+      {isShoe ? (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ border: "1px solid #8a6cff", background: "rgba(123,92,255,.22)", color: "#fff", borderRadius: 11, padding: "11px 10px", fontWeight: 800, textAlign: "center" }}>
+            Kling O1 · Locked for shoes
+          </div>
+          <div style={{ marginTop: 10, color: "#b8b8c2", fontSize: 11.5, lineHeight: 1.5 }}>
+            Flow creates the one image you approve. Kling O1 then makes the 10-second 9:16 video with that approved image as @image_1 and up to 6 shoe reference images as @image_2–@image_7.
+          </div>
+        </div>
+      ) : (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 12 }}>
+            <button
+              type="button"
+              disabled={loading || !batchId}
+              onClick={() => void chooseProvider("omni")}
+              style={{
+                border: !isKling ? "1px solid #8a6cff" : "1px solid #3a3a43",
+                background: !isKling ? "rgba(123,92,255,.22)" : "#202027",
+                color: "#fff", borderRadius: 11, padding: "10px 8px", fontWeight: 800,
+                cursor: loading ? "wait" : "pointer",
+              }}
+            >Google Flow</button>
+            <button
+              type="button"
+              disabled={loading || !batchId}
+              onClick={() => void chooseProvider("kling")}
+              title="Use Kling 3.0 for approved-image fashion video generation"
+              style={{
+                border: isKling ? "1px solid #8a6cff" : "1px solid #3a3a43",
+                background: isKling ? "rgba(123,92,255,.22)" : "#202027",
+                color: "#fff", borderRadius: 11, padding: "10px 8px", fontWeight: 800,
+                cursor: loading ? "wait" : "pointer",
+              }}
+            >Kling 3.0</button>
+          </div>
+          <div style={{ marginTop: 10, color: "#b8b8c2", fontSize: 11.5, lineHeight: 1.45 }}>
+            {isKling
+              ? "Kling 3.0 · 8 seconds · audio OFF · multi-shot OFF · 9:16 from the approved Google Flow start frame."
+              : "Google Flow uses the existing Omni video pipeline for the approved start frame."}
+          </div>
+        </>
+      )}
 
-      <div style={{ marginTop: 10, color: "#b8b8c2", fontSize: 11.5, lineHeight: 1.45 }}>
-        {isShoe
-          ? "Shoe Showcase remains on its dedicated Google Flow / Omni 3-clip editorial pipeline."
-          : isKling
-            ? "Kling 3.0 · 8 seconds · audio OFF · multi-shot OFF · 9:16 from the approved Google Flow start frame."
-            : "Google Flow uses the existing Omni video pipeline for the approved start frame."}
-      </div>
       <div style={{ marginTop: 7, color: "#858591", fontSize: 10.5 }}>
-        {batchName} · Manual selection only · no automatic fallback
+        {batchName} · {isShoe ? "Flow image → Kling O1 video" : "Manual selection only · no automatic fallback"}
       </div>
       {error && <div style={{ marginTop: 9, color: "#ff9999", fontSize: 11, lineHeight: 1.35 }}>{error}</div>}
     </aside>
