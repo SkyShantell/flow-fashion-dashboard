@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import VideoProviderControl from "./VideoProviderControl";
 import RegenerateVideoLabels from "./RegenerateVideoLabels";
+import HookPickerControl from "./HookPickerControl";
 
 export const metadata: Metadata = {
   title: "Flow Fashion Factory",
@@ -15,6 +16,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         {children}
         <VideoProviderControl />
         <RegenerateVideoLabels />
+        <HookPickerControl />
       </body>
     </html>
   );
