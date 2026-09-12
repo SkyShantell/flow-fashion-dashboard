@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 const SHOE_MOTION = "Shoe Showcase — Editorial Cut";
 const HOOK_STYLE_RE = /\s*·\s*Hook\s*([1-5])\s*$/i;
@@ -22,7 +23,13 @@ function encodeHookStyle(style: string, index: number) {
 }
 
 function normalizedProductName(value: string) {
-  return String(value || "").toLowerCase().replace(/\([^)]*\)|\[[^\]]*\]/g, " ").replace(/[_|/]+/g, " ").replace(/[^a-z0-9' -]+/g, " ").replace(/\s+/g, " ").trim();
+  return String(value || "")
+    .toLowerCase()
+    .replace(/\([^)]*\)|\[[^\]]*\]/g, " ")
+    .replace(/[_|/]+/g, " ")
+    .replace(/[^a-z0-9' -]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function hookOptions(productName: string, focus: string) {
@@ -30,6 +37,7 @@ function hookOptions(productName: string, focus: string) {
   const f = String(focus || "").toLowerCase();
   let category = "outfit";
   let primary = "the perfect fit >>>";
+
   if (raw.includes("jean")) { category = "pants"; primary = "the perfect jeans"; }
   else if (raw.includes("polo") && (raw.includes("knit") || raw.includes("sweater"))) { category = "top"; primary = "polo knitwear >>>"; }
   else if (raw.includes("knit")) { category = "top"; primary = `${raw.includes("sleeveless") ? "sleeveless " : ""}knitwear >>>`; }
@@ -38,13 +46,13 @@ function hookOptions(productName: string, focus: string) {
   else if (raw.includes("set")) { category = "set"; primary = "the perfect set for fall"; }
   else if (raw.includes("hoodie")) { category = "top"; primary = "hoodie season >>>"; }
   else if (raw.includes("dress")) { category = "dress"; primary = "the perfect everyday dress"; }
-  else if (["pants", "trouser", "cargo"].some(x => raw.includes(x)) || f === "pants") { category = "pants"; primary = "the perfect everyday pants"; }
+  else if (["pants", "trouser", "cargo", "short"].some(x => raw.includes(x)) || f === "pants") { category = "pants"; primary = raw.includes("short") ? "the perfect everyday shorts" : "the perfect everyday pants"; }
   else if (["shirt", "tee", "top", "blouse"].some(x => raw.includes(x)) || ["shirt", "hoodie"].includes(f)) { category = "top"; primary = "the perfect everyday top"; }
   else if (["shoe", "sneaker", "boot", "heel", "loafer"].some(x => raw.includes(x)) || f === "shoes") { category = "shoes"; primary = "the perfect pair >>>"; }
   else if (["bag", "purse", "handbag"].some(x => raw.includes(x)) || f === "handbag") { category = "bag"; primary = "the perfect everyday bag"; }
 
   const map: Record<string, string[]> = {
-    pants: [primary, "these fit way too good >>>", "found my new favorite pants", "the fit on these >>>", "need these in every color"],
+    pants: [primary, "these fit way too good >>>", "found my new favorite bottoms", "the fit on these >>>", "need these in every color"],
     top: [primary, "this top is too good >>>", "found my new favorite top", "the fit on this >>>", "need this in every color"],
     set: [primary, "this set is too good >>>", "the easiest outfit ever", "found my new favorite set", "need this in every color"],
     dress: [primary, "this dress is too good >>>", "found my new favorite dress", "the fit on this >>>", "need this in every color"],
@@ -56,8 +64,19 @@ function hookOptions(productName: string, focus: string) {
 }
 
 export default function HookPickerControl() {
+  const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
+  const [productName, setProductName] = useState("Product");
+  const [focus, setFocus] = useState("outfit");
+  const [hookIndex, setHookIndex] = useState(1);
   const hookIndexRef = useRef(1);
-  const currentKeyRef = useRef("");
+  const modalKeyRef = useRef("");
+  const targetRef = useRef<HTMLElement | null>(null);
+
+  const options = useMemo(() => hookOptions(productName, focus), [productName, focus]);
+
+  useEffect(() => {
+    hookIndexRef.current = hookIndex;
+  }, [hookIndex]);
 
   useEffect(() => {
     const originalFetch = window.fetch.bind(window);
@@ -66,6 +85,7 @@ export default function HookPickerControl() {
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
       const method = String(init?.method || (input instanceof Request ? input.method : "GET")).toUpperCase();
       let nextInit = init;
+
       if (method === "POST" && /\/api\/backend\/jobs\/[^/]+\/references(?:\?|$)/.test(url) && typeof init?.body === "string") {
         try {
           const body = JSON.parse(init.body) as Record<string, unknown>;
@@ -73,65 +93,78 @@ export default function HookPickerControl() {
             body.motion_style = encodeHookStyle(body.motion_style, hookIndexRef.current);
             nextInit = { ...init, body: JSON.stringify(body) };
           }
-        } catch {}
+        } catch {
+          // Leave the original request untouched when it is not JSON.
+        }
       }
+
       return originalFetch(input, nextInit);
     };
 
-    const mountPicker = () => {
+    const syncModal = () => {
       const modal = document.querySelector<HTMLElement>(".photoModal");
-      if (!modal || modal.querySelector(".shoePreGen")) { currentKeyRef.current = ""; return; }
-      const preGen = modal.querySelector<HTMLElement>(".preGenSettings");
-      if (!preGen) return;
-      const selects = preGen.querySelectorAll<HTMLSelectElement>("select");
-      const focusSelect = selects[0];
-      const motionSelect = selects[2];
-      if (!focusSelect || !motionSelect) return;
+      if (!modal || modal.querySelector(".shoePreGen")) {
+        modalKeyRef.current = "";
+        targetRef.current = null;
+        setPortalTarget(null);
+        return;
+      }
 
-      const productName = modal.querySelector<HTMLElement>(".modalSub")?.textContent?.trim() || "Product";
-      const key = `${productName}|${focusSelect.value}`;
-      let panel = modal.querySelector<HTMLElement>("[data-onscreen-hook-picker]");
-      if (!panel || currentKeyRef.current !== key) {
-        panel?.remove();
-        hookIndexRef.current = hookIndexFromStyle(motionSelect.value);
-        currentKeyRef.current = key;
-        panel = document.createElement("div");
-        panel.className = "preGenSettings";
-        panel.dataset.onscreenHookPicker = "true";
+      const target = modal.querySelector<HTMLElement>(".preGenSettings");
+      const selects = target?.querySelectorAll<HTMLSelectElement>("select");
+      const focusSelect = selects?.[0];
+      const motionSelect = selects?.[2];
+      if (!target || !focusSelect || !motionSelect) return;
 
-        const head = document.createElement("div");
-        head.className = "preGenHead";
-        const title = document.createElement("b");
-        title.textContent = "On-screen hook";
-        const help = document.createElement("span");
-        help.textContent = "Choose 1 of 5 for the finished video.";
-        head.append(title, help);
+      if (targetRef.current !== target) {
+        targetRef.current = target;
+        setPortalTarget(target);
+      }
 
-        const chips = document.createElement("div");
-        chips.className = "choiceChips";
-        hookOptions(productName, focusSelect.value).forEach((hook, index) => {
-          const button = document.createElement("button");
-          button.type = "button";
-          button.className = hookIndexRef.current === index + 1 ? "choiceChip selected" : "choiceChip";
-          button.textContent = hook;
-          button.onclick = () => {
-            hookIndexRef.current = index + 1;
-            chips.querySelectorAll("button").forEach((item, i) => item.classList.toggle("selected", i === index));
-          };
-          chips.appendChild(button);
-        });
-        panel.append(head, chips);
-        preGen.insertAdjacentElement("afterend", panel);
+      const nextName = modal.querySelector<HTMLElement>(".modalSub")?.textContent?.trim() || "Product";
+      const nextFocus = focusSelect.value || "outfit";
+      const nextKey = `${nextName}|${nextFocus}|${motionSelect.value}`;
+
+      if (modalKeyRef.current !== nextKey) {
+        modalKeyRef.current = nextKey;
+        setProductName(nextName);
+        setFocus(nextFocus);
+        const nextIndex = hookIndexFromStyle(motionSelect.value);
+        hookIndexRef.current = nextIndex;
+        setHookIndex(nextIndex);
       }
     };
 
-    const timer = window.setInterval(mountPicker, 400);
-    mountPicker();
+    const timer = window.setInterval(syncModal, 250);
+    syncModal();
+
     return () => {
       window.clearInterval(timer);
       window.fetch = originalFetch;
     };
   }, []);
 
-  return null;
+  if (!portalTarget) return null;
+
+  return createPortal(
+    <div style={{ marginTop: 18, paddingTop: 18, borderTop: "1px solid rgba(148,163,184,0.18)" }}>
+      <div className="preGenHead" style={{ marginBottom: 12 }}>
+        <b>On-screen hook</b>
+        <span>Choose 1 of 5. This is the text burned onto this product’s finished video.</span>
+      </div>
+      <div className="choiceChips">
+        {options.map((hook, index) => (
+          <button
+            key={`${hook}-${index}`}
+            type="button"
+            className={hookIndex === index + 1 ? "choiceChip selected" : "choiceChip"}
+            onClick={() => setHookIndex(index + 1)}
+          >
+            {hook}
+          </button>
+        ))}
+      </div>
+    </div>,
+    portalTarget,
+  );
 }
