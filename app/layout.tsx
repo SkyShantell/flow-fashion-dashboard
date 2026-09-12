@@ -7,6 +7,7 @@ import ShoeO1Control from "./ShoeO1Control";
 import ShoeReferenceControl from "./ShoeReferenceControl";
 import ShoeO1LegacyCopyFix from "./ShoeO1LegacyCopyFix";
 import ManualFFmpegControl from "./ManualFFmpegControl";
+import AppleEmojiSeeder from "./AppleEmojiSeeder";
 
 export const metadata: Metadata = {
   title: "Flow Fashion Factory",
@@ -25,6 +26,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <ShoeReferenceControl />
         <ShoeO1LegacyCopyFix />
         <ManualFFmpegControl />
+        <AppleEmojiSeeder />
       </body>
     </html>
   );
