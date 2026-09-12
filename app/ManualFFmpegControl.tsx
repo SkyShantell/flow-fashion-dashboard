@@ -30,6 +30,7 @@ type OverlayConfig = {
   headline_color: string;
   subheadline_color: string;
   placement: string;
+  emoji_mode?: string;
   presets: OverlayPreset[];
   colors: OverlayColor[];
   placements: OverlayPlacement[];
@@ -71,6 +72,73 @@ function previewFont(preset: string, line: "headline" | "subheadline") {
   return line === "headline"
     ? { fontFamily: "Arial, sans-serif", fontStyle: "normal", fontWeight: 800, fontSize: 28 }
     : { fontFamily: "Arial, sans-serif", fontStyle: "normal", fontWeight: 500, fontSize: 20 };
+}
+
+function emojiTokens(value: string): string[] {
+  return String(value || "").trim().split(/\s+/).filter(Boolean).slice(0, 8);
+}
+
+function isAppleDevice(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const text = `${navigator.platform || ""} ${navigator.userAgent || ""}`;
+  return /Mac|iPhone|iPad|iPod/i.test(text);
+}
+
+function renderSystemEmojiPng(token: string): string {
+  if (typeof document === "undefined" || !token) return "";
+  const canvas = document.createElement("canvas");
+  canvas.width = 256;
+  canvas.height = 256;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return "";
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  let fontSize = 172;
+  const fontFamily = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
+  while (fontSize > 80) {
+    ctx.font = `${fontSize}px ${fontFamily}`;
+    if (ctx.measureText(token).width <= 226) break;
+    fontSize -= 10;
+  }
+  ctx.font = `${fontSize}px ${fontFamily}`;
+  ctx.fillText(token, 128, 132);
+
+  try {
+    const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    let minX = canvas.width, minY = canvas.height, maxX = -1, maxY = -1;
+    for (let y = 0; y < canvas.height; y += 1) {
+      for (let x = 0; x < canvas.width; x += 1) {
+        if (image.data[(y * canvas.width + x) * 4 + 3] > 3) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    if (maxX < minX || maxY < minY) return "";
+    const pad = 8;
+    const sx = Math.max(0, minX - pad);
+    const sy = Math.max(0, minY - pad);
+    const sw = Math.min(canvas.width - sx, maxX - minX + 1 + pad * 2);
+    const sh = Math.min(canvas.height - sy, maxY - minY + 1 + pad * 2);
+    const out = document.createElement("canvas");
+    out.width = Math.max(1, sw);
+    out.height = Math.max(1, sh);
+    const outCtx = out.getContext("2d");
+    if (!outCtx) return "";
+    outCtx.drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
+    return out.toDataURL("image/png");
+  } catch {
+    return "";
+  }
+}
+
+function renderEmojiPngs(value: string): string[] {
+  return emojiTokens(value).map(token => renderSystemEmojiPng(token));
 }
 
 export default function ManualFFmpegControl() {
@@ -175,10 +243,12 @@ export default function ManualFFmpegControl() {
     setBusyJob(editorJob.id);
     setError("");
     try {
+      const emoji_prefix_pngs = renderEmojiPngs(draft.emoji_prefix);
+      const emoji_suffix_pngs = renderEmojiPngs(draft.emoji_suffix);
       await backend(`/jobs/${editorJob.id}/apply-text-overlay`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(draft),
+        body: JSON.stringify({ ...draft, emoji_prefix_pngs, emoji_suffix_pngs }),
       });
       setEditorJob(null);
       setEditorConfig(null);
@@ -211,7 +281,7 @@ export default function ManualFFmpegControl() {
               className="primary small"
               disabled={busy}
               onClick={() => void openEditor(job)}
-              title="Choose text style, colors and emoji, then render with FFmpeg"
+              title="Choose text style, colors and Apple emoji, then render with FFmpeg"
             >
               {busy ? "Sending…" : "Style + FFmpeg"}
             </button>
@@ -235,6 +305,7 @@ export default function ManualFFmpegControl() {
   const headlineHex = editorConfig?.colors.find(color => color.id === draft?.headline_color)?.hex || "#fff";
   const subheadlineHex = editorConfig?.colors.find(color => color.id === draft?.subheadline_color)?.hex || "#fff";
   const placementAlign = draft?.placement === "upper" ? "flex-start" : draft?.placement === "lower" ? "flex-end" : "center";
+  const appleDevice = isAppleDevice();
 
   return <>
     {portals}
@@ -246,7 +317,7 @@ export default function ManualFFmpegControl() {
       >
         <div style={{ width: "min(880px, 96vw)", maxHeight: "92vh", overflow: "auto", border: "1px solid rgba(255,255,255,.14)", borderRadius: 20, background: "#111116", color: "#fff", boxShadow: "0 30px 90px rgba(0,0,0,.55)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "18px 20px", borderBottom: "1px solid rgba(255,255,255,.1)" }}>
-            <div><div style={{ fontSize: 11, letterSpacing: ".11em", opacity: .55, textTransform: "uppercase" }}>Text + Emoji</div><div style={{ fontSize: 18, fontWeight: 850, marginTop: 3 }}>{editorJob.product_name || "Video overlay"}</div></div>
+            <div><div style={{ fontSize: 11, letterSpacing: ".11em", opacity: .55, textTransform: "uppercase" }}>Text + Apple Emoji</div><div style={{ fontSize: 18, fontWeight: 850, marginTop: 3 }}>{editorJob.product_name || "Video overlay"}</div></div>
             <button type="button" onClick={() => !busyJob && setEditorJob(null)} style={{ border: 0, background: "transparent", color: "#aaa", fontSize: 26, cursor: "pointer" }}>×</button>
           </div>
 
@@ -275,13 +346,18 @@ export default function ManualFFmpegControl() {
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                   <label style={{ display: "grid", gap: 6, fontSize: 12, color: "#bbb" }}>Emoji before headline
-                    <input value={draft.emoji_prefix} onChange={e => setDraft({ ...draft, emoji_prefix: e.target.value })} placeholder="🤎 🍂" style={{ background: "#1d1d24", color: "#fff", border: "1px solid #34343d", borderRadius: 10, padding: "10px 11px", font: "inherit" }} />
+                    <input value={draft.emoji_prefix} onChange={e => setDraft({ ...draft, emoji_prefix: e.target.value })} placeholder="🤎 🍂" style={{ background: "#1d1d24", color: "#fff", border: "1px solid #34343d", borderRadius: 10, padding: "10px 11px", fontFamily: '"Apple Color Emoji", system-ui, sans-serif' }} />
                   </label>
                   <label style={{ display: "grid", gap: 6, fontSize: 12, color: "#bbb" }}>Emoji after headline
-                    <input value={draft.emoji_suffix} onChange={e => setDraft({ ...draft, emoji_suffix: e.target.value })} placeholder="🤎" style={{ background: "#1d1d24", color: "#fff", border: "1px solid #34343d", borderRadius: 10, padding: "10px 11px", font: "inherit" }} />
+                    <input value={draft.emoji_suffix} onChange={e => setDraft({ ...draft, emoji_suffix: e.target.value })} placeholder="🤎" style={{ background: "#1d1d24", color: "#fff", border: "1px solid #34343d", borderRadius: 10, padding: "10px 11px", fontFamily: '"Apple Color Emoji", system-ui, sans-serif' }} />
                   </label>
                 </div>
-                <div style={{ fontSize: 10.5, color: "#777", marginTop: -7 }}>Separate multiple emoji with spaces. They render as color emoji graphics, not font glyphs.</div>
+                <div style={{ border: appleDevice ? "1px solid rgba(110,210,145,.22)" : "1px solid rgba(255,190,90,.22)", borderRadius: 10, padding: "9px 10px", background: appleDevice ? "rgba(60,145,90,.09)" : "rgba(170,115,35,.09)", color: appleDevice ? "#9ee4b8" : "#efc27d", fontSize: 10.5, lineHeight: 1.45 }}>
+                  {appleDevice
+                    ? "Apple emoji mode ✓ Emojis are rendered locally by this Apple device into transparent PNGs, then sent with the overlay. Railway does not need the Apple emoji font."
+                    : "For exact Apple emoji, open this editor on a Mac, iPhone, or iPad. On another device the local system emoji style will be used instead."}
+                </div>
+                <div style={{ fontSize: 10.5, color: "#777", marginTop: -7 }}>Separate multiple emoji with spaces. Complex Apple emoji sequences stay intact as one token.</div>
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
                   <label style={{ display: "grid", gap: 6, fontSize: 12, color: "#bbb" }}>Headline color
@@ -301,21 +377,21 @@ export default function ManualFFmpegControl() {
                 <div style={{ aspectRatio: "9 / 16", maxHeight: 560, width: "100%", borderRadius: 16, border: "1px solid #34343d", background: "linear-gradient(155deg,#3c3a3e 0%,#17171b 48%,#302822 100%)", display: "flex", flexDirection: "column", justifyContent: placementAlign, alignItems: "center", padding: "14% 8%", overflow: "hidden", boxShadow: "inset 0 0 90px rgba(0,0,0,.3)" }}>
                   <div style={{ width: "100%", textAlign: "center", textShadow: "0 2px 8px rgba(0,0,0,.65)" }}>
                     <div style={{ ...previewFont(draft.preset, "headline"), color: headlineHex, lineHeight: 1.05, overflowWrap: "anywhere" }}>
-                      {draft.emoji_prefix && <span style={{ fontSize: ".72em", marginRight: ".12em" }}>{draft.emoji_prefix}</span>}
+                      {draft.emoji_prefix && <span style={{ fontFamily: '"Apple Color Emoji", system-ui, sans-serif', fontSize: ".72em", marginRight: ".12em" }}>{draft.emoji_prefix}</span>}
                       {draft.headline || "Headline"}
-                      {draft.emoji_suffix && <span style={{ fontSize: ".72em", marginLeft: ".12em" }}>{draft.emoji_suffix}</span>}
+                      {draft.emoji_suffix && <span style={{ fontFamily: '"Apple Color Emoji", system-ui, sans-serif', fontSize: ".72em", marginLeft: ".12em" }}>{draft.emoji_suffix}</span>}
                     </div>
                     {draft.subheadline && <div style={{ ...previewFont(draft.preset, "subheadline"), color: subheadlineHex, lineHeight: 1.08, marginTop: 6, overflowWrap: "anywhere" }}>{draft.subheadline}</div>}
                   </div>
                 </div>
-                <div style={{ fontSize: 10.5, color: "#777", lineHeight: 1.4 }}>Preview shows layout and hierarchy. The final render uses the server fonts and color emoji assets over the real video.</div>
+                <div style={{ fontSize: 10.5, color: "#777", lineHeight: 1.4 }}>On your Mac, the preview and the final exported emoji both use Apple Color Emoji. Text is rendered server-side, then FFmpeg composites the finished transparent layer over the real video.</div>
               </div>
             </div>
           )}
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 9, padding: "14px 20px 18px", borderTop: "1px solid rgba(255,255,255,.1)" }}>
             <button type="button" className="ghost" disabled={!!busyJob} onClick={() => setEditorJob(null)}>Cancel</button>
-            <button type="button" className="primary" disabled={!!busyJob || loadingEditor || !draft || (!draft.headline.trim() && !draft.subheadline.trim())} onClick={() => void sendToFFmpeg()}>{busyJob ? "Sending…" : "Send to FFmpeg"}</button>
+            <button type="button" className="primary" disabled={!!busyJob || loadingEditor || !draft || (!draft.headline.trim() && !draft.subheadline.trim())} onClick={() => void sendToFFmpeg()}>{busyJob ? "Rendering Apple emoji…" : "Send to FFmpeg"}</button>
           </div>
         </div>
       </div>
