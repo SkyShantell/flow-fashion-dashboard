@@ -1,0 +1,67 @@
+name: Patch Dashboard Memory Polling
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/patch-memory-polling.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Use lightweight batch polling
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          page = Path('app/page.tsx')
+          text = page.read_text()
+          text = text.replace('const data = await api<Batch[]>("/batches");', 'const data = await api<Batch[]>("/batch-summaries");')
+          old = '''  useEffect(() => {\n    const id = setInterval(() => { void loadBatches(); void loadSelected(); }, 5000);\n    return () => clearInterval(id);\n  }, [loadBatches, loadSelected]);'''
+          new = '''  useEffect(() => {\n    const refreshSelected = () => {\n      if (document.visibilityState === "visible") void loadSelected();\n    };\n    const refreshList = () => {\n      if (document.visibilityState === "visible") void loadBatches();\n    };\n    const selectedTimer = setInterval(refreshSelected, 5000);\n    const listTimer = setInterval(refreshList, 15000);\n    return () => { clearInterval(selectedTimer); clearInterval(listTimer); };\n  }, [loadBatches, loadSelected]);'''
+          if old not in text:
+              raise SystemExit('main polling block not found')
+          text = text.replace(old, new, 1)
+          page.write_text(text)
+
+          for name in ['ManualFFmpegControl.tsx', 'RedoFFmpegControl.tsx', 'ShoeO1Control.tsx']:
+              path = Path('app') / name
+              text = path.read_text()
+              if 'backend<BatchLite[]>("/batches")' not in text:
+                  raise SystemExit(f'list batches call not found in {name}')
+              text = text.replace('backend<BatchLite[]>("/batches")', 'backend<BatchLite[]>("/batches-lite")')
+              if 'backend<BatchLite>(`/batches/${id}`)' not in text:
+                  raise SystemExit(f'active batch call not found in {name}')
+              text = text.replace('backend<BatchLite>(`/batches/${id}`)', 'backend<BatchLite>(`/batches/${id}/lite`)')
+              path.write_text(text)
+
+          provider = Path('app/VideoProviderControl.tsx')
+          text = provider.read_text()
+          if 'backend<BatchLite[]>("/batches")' not in text:
+              raise SystemExit('provider list batches call not found')
+          text = text.replace('backend<BatchLite[]>("/batches")', 'backend<BatchLite[]>("/batches-lite")')
+          provider.write_text(text)
+          PY
+
+      - name: Commit dashboard patch
+        shell: bash
+        run: |
+          if git diff --quiet -- app/page.tsx app/ManualFFmpegControl.tsx app/RedoFFmpegControl.tsx app/ShoeO1Control.tsx app/VideoProviderControl.tsx; then
+            echo "No dashboard changes needed"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/page.tsx app/ManualFFmpegControl.tsx app/RedoFFmpegControl.tsx app/ShoeO1Control.tsx app/VideoProviderControl.tsx
+          git commit -m "Reduce dashboard polling load"
+          git push origin HEAD:main
