@@ -839,7 +839,7 @@ export default function Home() {
                 <div><h3>Creator Scanner Queue</h3><p>Pull Creator Scanner products from the shared Scanner Queue sheet.</p></div>
                 <button className="ghost small" onClick={() => void loadScanner()}>Reload</button>
               </div>
-              <label>TikTok Shop market<select value={shopMarket} onChange={e => setShopMarket(e.target.value as "US" | "UK")}><option value="US">US</option><option value="UK">UK</option></select><span className="fieldHint">UK uses SociaVault region GB.</span></label>
+              <label>TikTok Shop market<select value={shopMarket} onChange={e => setShopMarket(e.target.value as "US" | "UK")}><option value="US">US</option><option value="UK">UK</option></select><span className="fieldHint">UK uses TikHub region GB. US uses SociaVault.</span></label>
               <div className="scannerList">
                 {creatorScannerRows.slice(0, 12).map((row, idx) => {
                   const n = Number(row._row_num || 0);
@@ -920,7 +920,7 @@ export default function Home() {
                             <option value="US">US</option>
                             <option value="UK">UK</option>
                           </select>
-                          <span className="fieldHint">UK uses SociaVault region GB.</span>
+                          <span className="fieldHint">UK uses TikHub region GB. US uses SociaVault.</span>
                         </label>
 
                         <label>Destination
