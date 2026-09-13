@@ -7,6 +7,7 @@ import ShoeO1Control from "./ShoeO1Control";
 import ShoeReferenceControl from "./ShoeReferenceControl";
 import ShoeO1LegacyCopyFix from "./ShoeO1LegacyCopyFix";
 import ManualFFmpegControl from "./ManualFFmpegControl";
+import RedoFFmpegControl from "./RedoFFmpegControl";
 import AppleEmojiSeeder from "./AppleEmojiSeeder";
 
 export const metadata: Metadata = {
@@ -26,6 +27,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <ShoeReferenceControl />
         <ShoeO1LegacyCopyFix />
         <ManualFFmpegControl />
+        <RedoFFmpegControl />
         <AppleEmojiSeeder />
       </body>
     </html>
