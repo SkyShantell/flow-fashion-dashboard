@@ -130,8 +130,11 @@ export default function Home() {
   const [flowAccounts, setFlowAccounts] = useState<FlowAccount[]>([]);
   const [flowAccountsLoading, setFlowAccountsLoading] = useState(false);
   const [newFlowAccountEmail, setNewFlowAccountEmail] = useState("");
-  const [batches, setBatches] = useState<Batch[]>([]);
-  const [selectedId, setSelectedId] = useState<string>("");
+const [batches, setBatches] = useState<Batch[]>([]);
+const [hiddenBatchIds, setHiddenBatchIds] = useState<string[]>([]);
+const [hiddenBatchesLoaded, setHiddenBatchesLoaded] = useState(false);
+const [showHiddenBatches, setShowHiddenBatches] = useState(false);
+const [selectedId, setSelectedId] = useState<string>("");
   const [selected, setSelected] = useState<Batch | null>(null);
   const [scanner, setScanner] = useState<ScannerRow[]>([]);
   const [scannerPick, setScannerPick] = useState<Set<number>>(new Set());
@@ -217,6 +220,31 @@ export default function Home() {
     })).sort((a, b) => b.queuedAt.localeCompare(a.queuedAt));
   }, [scanner]);
 
+
+const hiddenBatchSet = useMemo(() => new Set(hiddenBatchIds), [hiddenBatchIds]);
+const visibleBatches = useMemo(() => batches.filter(b => !hiddenBatchSet.has(b.id)), [batches, hiddenBatchSet]);
+const hiddenBatches = useMemo(() => batches.filter(b => hiddenBatchSet.has(b.id)), [batches, hiddenBatchSet]);
+
+useEffect(() => {
+  try {
+    const saved = localStorage.getItem("flow-fashion-hidden-batches");
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) setHiddenBatchIds(parsed.filter((x): x is string => typeof x === "string"));
+    }
+  } catch {}
+  setHiddenBatchesLoaded(true);
+}, []);
+useEffect(() => {
+  if (!hiddenBatchesLoaded) return;
+  try { localStorage.setItem("flow-fashion-hidden-batches", JSON.stringify(hiddenBatchIds)); } catch {}
+}, [hiddenBatchIds, hiddenBatchesLoaded]);
+useEffect(() => {
+  if (!hiddenBatchesLoaded || !selectedId || !hiddenBatchSet.has(selectedId)) return;
+  const next = batches.find(b => !hiddenBatchSet.has(b.id));
+  setSelectedId(next?.id || "");
+}, [batches, hiddenBatchSet, hiddenBatchesLoaded, selectedId]);
+
   useEffect(() => { void loadHealth(); void loadFlowAccounts(); void loadBatches(); void loadScanner(); void loadAvatars(); }, [loadHealth, loadFlowAccounts, loadBatches, loadScanner, loadAvatars]);
   useEffect(() => { void loadSelected(); }, [loadSelected]);
   useEffect(() => {
@@ -255,7 +283,17 @@ export default function Home() {
   const previewJob = previewImage ? selected?.jobs.find(j => j.id === previewImage.jobId) || null : null;
   const videoPromptJob = videoPromptJobId ? selected?.jobs.find(j => j.id === videoPromptJobId) || null : null;
 
-  function flash(msg: string) { setMessage(msg); setError(""); setTimeout(() => setMessage(""), 3500); }
+function flash(msg: string) { setMessage(msg); setError(""); setTimeout(() => setMessage(""), 3500); }
+function hideBatch(batchId: string) {
+  setHiddenBatchIds(prev => prev.includes(batchId) ? prev : [...prev, batchId]);
+  if (selectedId === batchId) {
+    const next = batches.find(b => b.id !== batchId && !hiddenBatchSet.has(b.id));
+    setSelectedId(next?.id || "");
+  }
+}
+function restoreBatch(batchId: string) {
+  setHiddenBatchIds(prev => prev.filter(id => id !== batchId));
+}
   function productTypeLabel(value?: string | null) { return productTypes.find(x => x.value === value)?.label || "Outfit / Set"; }
   function togglePool(value: string, current: string[], setter: (next: string[]) => void) {
     if (current.includes(value)) {
@@ -730,11 +768,21 @@ export default function Home() {
       <aside className="sidebar">
         <div className="brand"><div className="brandMark">F</div><div><b>Flow Fashion</b><span>Production Factory</span></div></div>
         <button className="primary full" onClick={() => { setNewFlowAccountEmail(""); setShowCreate(true); }}>+ New batch</button>
-        <div className="sideLabel">Batches</div>
-        <div className="batchList">
-          {batches.map(b => <button key={b.id} className={`batchBtn ${selectedId === b.id ? "active" : ""}`} onClick={() => setSelectedId(b.id)}><b>{b.name || "Untitled batch"}</b><span>{b.mode === "shoe_showcase" ? "Shoe Showcase" : (b.avatar_name ? `Fashion Try-On · ${b.avatar_name}` : "Fashion Try-On")} · {Number(b.counts?.products || 0)} products · {b.status}</span></button>)}
-          {!batches.length && <div className="muted">No batches yet.</div>}
-        </div>
+<div className="sideLabel sideLabelRow">
+  <span>Batches</span>
+  {hiddenBatches.length > 0 && <button className="hiddenBatchToggle" onClick={() => setShowHiddenBatches(v => !v)}>{showHiddenBatches ? "Done" : `Hidden (${hiddenBatches.length})`}</button>}
+</div>
+<div className="batchList">
+  {visibleBatches.map(b => <div key={b.id} className="batchRow">
+    <button className={`batchBtn ${selectedId === b.id ? "active" : ""}`} onClick={() => setSelectedId(b.id)}><b>{b.name || "Untitled batch"}</b><span>{b.mode === "shoe_showcase" ? "Shoe Showcase" : (b.avatar_name ? `Fashion Try-On · ${b.avatar_name}` : "Fashion Try-On")} · {Number(b.counts?.products || 0)} products · {b.status}</span></button>
+    <button className="batchHideBtn" onClick={() => hideBatch(b.id)} title="Hide batch" aria-label={`Hide ${b.name || "batch"}`}>Hide</button>
+  </div>)}
+  {!visibleBatches.length && batches.length > 0 && <div className="muted">All batches are hidden.</div>}
+  {!batches.length && <div className="muted">No batches yet.</div>}
+  {showHiddenBatches && hiddenBatches.length > 0 && <div className="hiddenBatchList">
+    {hiddenBatches.map(b => <div key={b.id} className="hiddenBatchRow"><span title={b.name || "Untitled batch"}>{b.name || "Untitled batch"}</span><button onClick={() => restoreBatch(b.id)}>Restore</button></div>)}
+  </div>}
+</div>
         <div className="providerBox">
           <div className="sideLabel">Backend</div>
           <div><span className={pillClass(Boolean(health?.ok))}></span> Railway API</div>
