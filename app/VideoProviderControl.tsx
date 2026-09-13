@@ -55,7 +55,7 @@ export default function VideoProviderControl() {
 
   const loadBatches = useCallback(async () => {
     try {
-      const list = await backend<BatchLite[]>("/batches");
+      const list = await backend<BatchLite[]>("/batches-lite");
       setBatches(list);
       setBatchId(current => current && list.some(batch => batch.id === current)
         ? current

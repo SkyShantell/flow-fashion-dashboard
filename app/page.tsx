@@ -187,7 +187,7 @@ const [selectedId, setSelectedId] = useState<string>("");
 
   const loadBatches = useCallback(async () => {
     try {
-      const data = await api<Batch[]>("/batches");
+      const data = await api<Batch[]>("/batch-summaries");
       setBatches(data);
       if (!selectedId && data.length) setSelectedId(data[0].id);
     } catch (e) { setError(e instanceof Error ? e.message : "Could not load batches"); }
@@ -248,8 +248,15 @@ useEffect(() => {
   useEffect(() => { void loadHealth(); void loadFlowAccounts(); void loadBatches(); void loadScanner(); void loadAvatars(); }, [loadHealth, loadFlowAccounts, loadBatches, loadScanner, loadAvatars]);
   useEffect(() => { void loadSelected(); }, [loadSelected]);
   useEffect(() => {
-    const id = setInterval(() => { void loadBatches(); void loadSelected(); }, 5000);
-    return () => clearInterval(id);
+    const refreshSelected = () => {
+      if (document.visibilityState === "visible") void loadSelected();
+    };
+    const refreshList = () => {
+      if (document.visibilityState === "visible") void loadBatches();
+    };
+    const selectedTimer = setInterval(refreshSelected, 5000);
+    const listTimer = setInterval(refreshList, 15000);
+    return () => { clearInterval(selectedTimer); clearInterval(listTimer); };
   }, [loadBatches, loadSelected]);
   useEffect(() => {
     if (!photoJobId) return;

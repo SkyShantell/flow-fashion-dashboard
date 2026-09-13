@@ -46,7 +46,7 @@ export default function RedoFFmpegControl() {
 
   const loadBatches = useCallback(async () => {
     try {
-      const list = await backend<BatchLite[]>("/batches");
+      const list = await backend<BatchLite[]>("/batches-lite");
       setBatches(list);
       setBatchId(current => current && list.some(batch => batch.id === current)
         ? current
@@ -59,7 +59,7 @@ export default function RedoFFmpegControl() {
   const loadActive = useCallback(async (id: string) => {
     if (!id) { setActiveBatch(null); return; }
     try {
-      setActiveBatch(await backend<BatchLite>(`/batches/${id}`));
+      setActiveBatch(await backend<BatchLite>(`/batches/${id}/lite`));
     } catch {
       // Manual FFmpeg control already surfaces refresh failures.
     }

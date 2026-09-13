@@ -155,7 +155,7 @@ export default function ManualFFmpegControl() {
 
   const loadBatches = useCallback(async () => {
     try {
-      const list = await backend<BatchLite[]>("/batches");
+      const list = await backend<BatchLite[]>("/batches-lite");
       setBatches(list);
       setBatchId(current => current && list.some(batch => batch.id === current)
         ? current
@@ -168,7 +168,7 @@ export default function ManualFFmpegControl() {
   const loadActive = useCallback(async (id: string) => {
     if (!id) { setActiveBatch(null); return; }
     try {
-      setActiveBatch(await backend<BatchLite>(`/batches/${id}`));
+      setActiveBatch(await backend<BatchLite>(`/batches/${id}/lite`));
       setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not refresh FFmpeg status");
