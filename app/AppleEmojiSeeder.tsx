@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 
-const PACK_VERSION = "flow-apple-emoji-pack-v1";
+const PACK_VERSION = "flow-apple-emoji-pack-v2";
 const APPLE_EMOJIS = [
   "🤎","🖤","🤍","❤️","🩷","🧡","💛","💚","💙","💜","🩶",
   "💕","💖","💗","💓","💘","💝","💞","💟","❣️","♥️",

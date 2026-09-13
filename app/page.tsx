@@ -73,8 +73,9 @@ type Health = {
 type SavedAvatar = {
   id: string;
   name: string;
-  image_b64: string;
+  image_b64?: string;
   image_mime: string;
+  image_url?: string | null;
 };
 
 type FlowAccount = {
@@ -125,6 +126,12 @@ function stageLabel(stage: string) {
   return stage.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+function savedAvatarSrc(avatar: SavedAvatar) {
+  if (avatar.image_url) return `/api/backend${avatar.image_url}`;
+  if (avatar.image_b64) return `data:${avatar.image_mime || "image/jpeg"};base64,${avatar.image_b64}`;
+  return "";
+}
+
 export default function Home() {
   const [health, setHealth] = useState<Health | null>(null);
   const [flowAccounts, setFlowAccounts] = useState<FlowAccount[]>([]);
@@ -157,6 +164,10 @@ const [selectedId, setSelectedId] = useState<string>("");
   const [savedAvatars, setSavedAvatars] = useState<SavedAvatar[]>([]);
   const [selectedAvatarId, setSelectedAvatarId] = useState("");
   const [avatarName, setAvatarName] = useState("My Avatar");
+  const selectedSavedAvatar = useMemo(
+    () => savedAvatars.find(avatar => avatar.id === selectedAvatarId) || null,
+    [savedAvatars, selectedAvatarId],
+  );
   const [links, setLinks] = useState("");
   const [shopMarket, setShopMarket] = useState<"US" | "UK">("US");
   const [regen, setRegen] = useState<Record<string, string>>({});
@@ -329,14 +340,16 @@ function restoreBatch(batchId: string) {
 
   async function createBatch() {
     const shoeMode = batchMode === "shoe_showcase";
-    if (!shoeMode && !avatarB64) { setError("Choose or upload an avatar before creating the Fashion Try-On batch."); return; }
+    if (!shoeMode && !avatarB64 && !selectedAvatarId) { setError("Choose or upload an avatar before creating the Fashion Try-On batch."); return; }
     setLoading(true); setError("");
     try {
-      if (!shoeMode && avatarB64 && !selectedAvatarId) {
+      let avatarIdForBatch = selectedAvatarId;
+      if (!shoeMode && avatarB64 && !avatarIdForBatch) {
         const saved = await api<SavedAvatar>("/avatars", {
           method: "POST", headers: { "content-type": "application/json" },
           body: JSON.stringify({ name: avatarName.trim() || "My Avatar", image_b64: avatarB64, image_mime: avatarMime })
         });
+        avatarIdForBatch = saved.id;
         setSelectedAvatarId(saved.id);
         setSavedAvatars(prev => [saved, ...prev.filter(x => x.id !== saved.id)]);
       }
@@ -350,7 +363,8 @@ function restoreBatch(batchId: string) {
           video_style: shoeMode ? SHOE_MOTION : motionPool[0],
           motion_pool: shoeMode ? [SHOE_MOTION] : motionPool,
           auto_approve: shoeMode ? false : autoApprove,
-          avatar_b64: shoeMode ? null : avatarB64,
+          avatar_id: shoeMode ? null : (avatarIdForBatch || null),
+          avatar_b64: shoeMode || avatarIdForBatch ? null : avatarB64,
           avatar_mime: avatarMime,
           avatar_name: shoeMode ? null : (avatarName.trim() || "My Avatar"),
           flow_account_email: newFlowAccountEmail || null
@@ -374,7 +388,7 @@ function restoreBatch(batchId: string) {
 
   function chooseSavedAvatar(avatar: SavedAvatar) {
     setSelectedAvatarId(avatar.id);
-    setAvatarB64(avatar.image_b64);
+    setAvatarB64(null);
     setAvatarMime(avatar.image_mime || "image/jpeg");
     setAvatarName(avatar.name);
   }
@@ -465,7 +479,8 @@ function restoreBatch(batchId: string) {
             video_style: motion,
             motion_pool: [motion],
             auto_approve: false,
-            avatar_b64: avatar.image_b64,
+            avatar_id: avatar.id,
+            avatar_b64: null,
             avatar_mime: avatar.image_mime || "image/jpeg",
             avatar_name: avatar.name,
             flow_account_email: null,
@@ -844,9 +859,9 @@ function restoreBatch(batchId: string) {
             <div className="wide settingBlock"><div className="settingLabel"><b>Backgrounds</b><span>{scenePool.length > 1 ? `Rotate ${scenePool.length} settings across the batch` : "Same setting for every product"}</span></div><div className="choiceChips">{scenes.map(x => <button type="button" key={x} className={scenePool.includes(x) ? "choiceChip selected" : "choiceChip"} onClick={() => togglePool(x, scenePool, setScenePool)}>{x}</button>)}</div></div>
             <div className="wide settingBlock"><div className="settingLabel"><b>Motion styles</b><span>{motionPool.length > 1 ? `Rotate ${motionPool.length} motion styles across the batch` : "Same motion style for every product"}</span></div><div className="motionGroupLabel">Academy presets · recommended · matched to {profile.toLowerCase()} creator</div><div className="choiceChips">{academyStylesFor(profile).map(x => <button type="button" key={x} className={motionPool.includes(x) ? "choiceChip selected" : "choiceChip"} onClick={() => togglePool(x, motionPool, setMotionPool)}>{x}</button>)}</div><div className="motionGroupLabel customLabel">Custom extras</div><div className="choiceChips">{customStyles.map(x => <button type="button" key={x} className={motionPool.includes(x) ? "choiceChip selected" : "choiceChip"} onClick={() => togglePool(x, motionPool, setMotionPool)}>{x}</button>)}</div><div className="motionNote">Academy presets follow your existing try-on workflow.</div></div>
             <div className="wide avatarLibrary"><div className="settingLabel"><b>Avatar / creator</b><span>Pick a saved avatar or upload a new one. New uploads are saved automatically when you create the batch.</span></div>
-              {!!savedAvatars.length && <div className="avatarGrid">{savedAvatars.map(avatar => <div className={`avatarCard ${selectedAvatarId === avatar.id ? "selected" : ""}`} key={avatar.id}><button type="button" className="avatarPick" onClick={() => chooseSavedAvatar(avatar)}><img src={`data:${avatar.image_mime};base64,${avatar.image_b64}`} alt={avatar.name} /><span>{avatar.name}</span></button><button type="button" className="avatarDelete" title="Delete saved avatar" onClick={() => void deleteAvatar(avatar)}>×</button></div>)}</div>}
+              {!!savedAvatars.length && <div className="avatarGrid">{savedAvatars.map(avatar => <div className={`avatarCard ${selectedAvatarId === avatar.id ? "selected" : ""}`} key={avatar.id}><button type="button" className="avatarPick" onClick={() => chooseSavedAvatar(avatar)}><img src={savedAvatarSrc(avatar)} alt={avatar.name} /><span>{avatar.name}</span></button><button type="button" className="avatarDelete" title="Delete saved avatar" onClick={() => void deleteAvatar(avatar)}>×</button></div>)}</div>}
               <div className="avatarUploadRow"><label>Upload new avatar<input type="file" accept="image/*" onChange={onAvatar} /></label><label>Avatar name<input value={avatarName} onChange={e => setAvatarName(e.target.value)} /></label><button type="button" className="ghost" disabled={loading || !avatarB64 || !!selectedAvatarId} onClick={saveCurrentAvatar}>{selectedAvatarId ? "Saved" : "Save avatar"}</button></div>
-              {avatarB64 && <div className="avatarSelected"><img src={`data:${avatarMime};base64,${avatarB64}`} alt="Selected avatar" /><div><b>{avatarName || "Selected avatar"}</b><span>{selectedAvatarId ? "Saved avatar selected" : "Uploaded — save it to reuse later"}</span></div></div>}
+              {(avatarB64 || selectedSavedAvatar) && <div className="avatarSelected"><img src={selectedSavedAvatar ? savedAvatarSrc(selectedSavedAvatar) : `data:${avatarMime};base64,${avatarB64}`} alt="Selected avatar" /><div><b>{avatarName || "Selected avatar"}</b><span>{selectedAvatarId ? "Saved avatar selected · stored externally" : "Uploaded — save it to reuse later"}</span></div></div>}
             </div>
           </>}
           {batchMode === "fashion_tryon" && <label className="check wide"><input type="checkbox" checked={autoApprove} onChange={e => setAutoApprove(e.target.checked)} /> Auto-approve images and continue to video</label>}

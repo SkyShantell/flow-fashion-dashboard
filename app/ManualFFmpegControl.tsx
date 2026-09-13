@@ -141,6 +141,23 @@ function renderEmojiPngs(value: string): string[] {
   return emojiTokens(value).map(token => renderSystemEmojiPng(token));
 }
 
+function looksLikeEmojiToken(token: string): boolean {
+  for (const char of String(token || "")) {
+    const code = char.codePointAt(0) || 0;
+    if ((code >= 0x1f000 && code <= 0x1faff) || (code >= 0x2600 && code <= 0x27bf)) return true;
+  }
+  return false;
+}
+
+function normalizeEdgeEmoji(draft: OverlayDraft): OverlayDraft {
+  const parts = String(draft.headline || "").trim().split(/\s+/).filter(Boolean);
+  let prefix = String(draft.emoji_prefix || "").trim();
+  let suffix = String(draft.emoji_suffix || "").trim();
+  if (parts.length > 1 && !prefix && looksLikeEmojiToken(parts[0])) prefix = parts.shift() || "";
+  if (parts.length > 1 && !suffix && looksLikeEmojiToken(parts[parts.length - 1])) suffix = parts.pop() || "";
+  return { ...draft, headline: parts.join(" "), emoji_prefix: prefix, emoji_suffix: suffix };
+}
+
 export default function ManualFFmpegControl() {
   const [batches, setBatches] = useState<BatchLite[]>([]);
   const [batchId, setBatchId] = useState("");
@@ -243,12 +260,19 @@ export default function ManualFFmpegControl() {
     setBusyJob(editorJob.id);
     setError("");
     try {
-      const emoji_prefix_pngs = renderEmojiPngs(draft.emoji_prefix);
-      const emoji_suffix_pngs = renderEmojiPngs(draft.emoji_suffix);
+      const normalizedDraft = normalizeEdgeEmoji(draft);
+      const appleDevice = isAppleDevice();
+      const emoji_prefix_pngs = appleDevice ? renderEmojiPngs(normalizedDraft.emoji_prefix) : [];
+      const emoji_suffix_pngs = appleDevice ? renderEmojiPngs(normalizedDraft.emoji_suffix) : [];
       await backend(`/jobs/${editorJob.id}/apply-text-overlay`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ...draft, emoji_prefix_pngs, emoji_suffix_pngs }),
+        body: JSON.stringify({
+          ...normalizedDraft,
+          emoji_prefix_pngs,
+          emoji_suffix_pngs,
+          emoji_source: appleDevice ? "apple_browser" : "server_cache",
+        }),
       });
       setEditorJob(null);
       setEditorConfig(null);
@@ -354,8 +378,8 @@ export default function ManualFFmpegControl() {
                 </div>
                 <div style={{ border: appleDevice ? "1px solid rgba(110,210,145,.22)" : "1px solid rgba(255,190,90,.22)", borderRadius: 10, padding: "9px 10px", background: appleDevice ? "rgba(60,145,90,.09)" : "rgba(170,115,35,.09)", color: appleDevice ? "#9ee4b8" : "#efc27d", fontSize: 10.5, lineHeight: 1.45 }}>
                   {appleDevice
-                    ? "Apple emoji mode ✓ Emojis are rendered locally by this Apple device into transparent PNGs, then sent with the overlay. Railway does not need the Apple emoji font."
-                    : "For exact Apple emoji, open this editor on a Mac, iPhone, or iPad. On another device the local system emoji style will be used instead."}
+                    ? "Apple emoji pack ✓ This Apple device syncs emoji artwork into the shared server library. Final exports use that shared Apple artwork."
+                    : "Apple emoji pack ✓ Final exports use the shared Apple emoji library on both Mac and Windows. On Windows, the preview may look different, but the rendered video uses the saved Apple artwork."}
                 </div>
                 <div style={{ fontSize: 10.5, color: "#777", marginTop: -7 }}>Separate multiple emoji with spaces. Complex Apple emoji sequences stay intact as one token.</div>
 
@@ -384,7 +408,7 @@ export default function ManualFFmpegControl() {
                     {draft.subheadline && <div style={{ ...previewFont(draft.preset, "subheadline"), color: subheadlineHex, lineHeight: 1.08, marginTop: 6, overflowWrap: "anywhere" }}>{draft.subheadline}</div>}
                   </div>
                 </div>
-                <div style={{ fontSize: 10.5, color: "#777", lineHeight: 1.4 }}>On your Mac, the preview and the final exported emoji both use Apple Color Emoji. Text is rendered server-side, then FFmpeg composites the finished transparent layer over the real video.</div>
+                <div style={{ fontSize: 10.5, color: "#777", lineHeight: 1.4 }}>The preview can follow this device’s local emoji style. The final export uses the shared Apple emoji artwork, then FFmpeg composites the finished transparent layer over the real video.</div>
               </div>
             </div>
           )}
