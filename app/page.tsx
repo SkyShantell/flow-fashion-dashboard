@@ -10,6 +10,7 @@ type Job = {
   product_name?: string | null;
   product_url?: string | null;
   product_id?: string | null;
+  sociavault_region?: string | null;
   focus?: string | null;
   scene?: string | null;
   motion_style?: string | null;
@@ -153,6 +154,7 @@ export default function Home() {
   const [selectedAvatarId, setSelectedAvatarId] = useState("");
   const [avatarName, setAvatarName] = useState("My Avatar");
   const [links, setLinks] = useState("");
+  const [shopMarket, setShopMarket] = useState<"US" | "UK">("US");
   const [regen, setRegen] = useState<Record<string, string>>({});
   const [photoJobId, setPhotoJobId] = useState<string | null>(null);
   const [refPick, setRefPick] = useState<Record<string, string[]>>({});
@@ -363,7 +365,7 @@ export default function Home() {
     if (!list.length) return;
     setLoading(true); setError("");
     try {
-      await api<Batch>(`/batches/${selectedId}/products`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ links: list, start_generation: false }) });
+      await api<Batch>(`/batches/${selectedId}/products`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ links: list, start_generation: false, region: shopMarket === "UK" ? "GB" : "US" }) });
       setLinks(""); await loadSelected(); flash(`${list.length} product link(s) imported — choose product photos next`);
     } catch (e) { setError(e instanceof Error ? e.message : "Import failed"); }
     finally { setLoading(false); }
@@ -375,7 +377,7 @@ export default function Home() {
     if (!rows.length) return;
     setLoading(true); setError("");
     try {
-      await api<Batch>(`/batches/${selectedId}/scanner/import`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ row_nums: rows, start_generation: false }) });
+      await api<Batch>(`/batches/${selectedId}/scanner/import`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ row_nums: rows, start_generation: false, region: shopMarket === "UK" ? "GB" : "US" }) });
       setScannerPick(new Set()); await Promise.all([loadSelected(), loadScanner()]); flash(`${rows.length} scanner product(s) imported — choose product photos next`);
     } catch (e) { setError(e instanceof Error ? e.message : "Scanner import failed"); }
     finally { setLoading(false); }
@@ -835,6 +837,7 @@ export default function Home() {
                 <div><h3>Creator Scanner Queue</h3><p>Pull Creator Scanner products from the shared Scanner Queue sheet.</p></div>
                 <button className="ghost small" onClick={() => void loadScanner()}>Reload</button>
               </div>
+              <label>TikTok Shop market<select value={shopMarket} onChange={e => setShopMarket(e.target.value as "US" | "UK")}><option value="US">US</option><option value="UK">UK</option></select><span className="fieldHint">UK uses SociaVault region GB.</span></label>
               <div className="scannerList">
                 {creatorScannerRows.slice(0, 12).map((row, idx) => {
                   const n = Number(row._row_num || 0);
@@ -931,6 +934,7 @@ export default function Home() {
 
             <div className="panel">
               <div className="panelHead"><div><h3>Import product links</h3><p>Paste one TikTok Shop product URL per line.</p></div></div>
+              <label>TikTok Shop market<select value={shopMarket} onChange={e => setShopMarket(e.target.value as "US" | "UK")}><option value="US">US</option><option value="UK">UK</option></select><span className="fieldHint">Choose UK for UK Shop links. SociaVault receives region=GB.</span></label>
               <textarea className="linkBox" value={links} onChange={e => setLinks(e.target.value)} placeholder="https://www.tiktok.com/view/product/..." />
               {String(selected.status || "open").toLowerCase() === "done" && <div className="doneNotice">This batch is done. New product links are locked.</div>}
               <button className="primary full" disabled={!links.trim() || loading || String(selected.status || "open").toLowerCase() === "done"} onClick={importLinks}>Import products</button>
