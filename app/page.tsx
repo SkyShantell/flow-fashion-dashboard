@@ -138,6 +138,7 @@ export default function Home() {
   const [sniperAvatarByRun, setSniperAvatarByRun] = useState<Record<string, string>>({});
   const [sniperProfileByRun, setSniperProfileByRun] = useState<Record<string, string>>({});
   const [sniperDestinationByRun, setSniperDestinationByRun] = useState<Record<string, string>>({});
+  const [sniperMarketByRun, setSniperMarketByRun] = useState<Record<string, "US" | "UK">>({});
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -390,6 +391,7 @@ export default function Home() {
     const rowNums = rows.map(r => Number(r._row_num || 0)).filter(n => n >= 2);
     if (!rowNums.length) { setError("This Sniper run has no queue rows to import."); return; }
     const creatorProfile = sniperProfileByRun[runId] || "Male";
+    const market = sniperMarketByRun[runId] || "US";
     const openAvatarBatches = batches.filter(b => b.mode !== "shoe_showcase" && String(b.status || "open").toLowerCase() !== "done" && String(b.avatar_name || "") === avatar.name);
     const requestedDestination = sniperDestinationByRun[runId] || (openAvatarBatches[0]?.id || "new");
 
@@ -429,7 +431,7 @@ export default function Home() {
       const imported = await api<Batch>(`/batches/${target.id}/scanner/import`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ row_nums: rowNums, start_generation: false }),
+        body: JSON.stringify({ row_nums: rowNums, start_generation: false, region: market === "UK" ? "GB" : "US" }),
       });
       setSelectedId(imported.id);
       setSelected(imported);
@@ -884,6 +886,7 @@ export default function Home() {
                         )
                       : [];
                     const destination = sniperDestinationByRun[group.id] || (openAvatarBatches[0]?.id || "new");
+                    const market = sniperMarketByRun[group.id] || "US";
 
                     return <div className="sniperRunCard compactSniperCard" key={group.id}>
                       <div className="sniperRunHead">
@@ -910,6 +913,14 @@ export default function Home() {
                           <select value={sniperProfileByRun[group.id] || "Male"} onChange={e => setSniperProfileByRun(prev => ({ ...prev, [group.id]: e.target.value }))}>
                             {profiles.map(x => <option key={x}>{x}</option>)}
                           </select>
+                        </label>
+
+                        <label>TikTok Shop market
+                          <select value={market} onChange={e => setSniperMarketByRun(prev => ({ ...prev, [group.id]: e.target.value as "US" | "UK" }))}>
+                            <option value="US">US</option>
+                            <option value="UK">UK</option>
+                          </select>
+                          <span className="fieldHint">UK uses SociaVault region GB.</span>
                         </label>
 
                         <label>Destination
