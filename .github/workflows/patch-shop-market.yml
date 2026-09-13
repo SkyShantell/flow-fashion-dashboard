@@ -1,0 +1,75 @@
+name: Patch Flow Fashion Shop Market Selector
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/patch-shop-market.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Add US UK market selector to Flow Fashion
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("app/page.tsx")
+          text = path.read_text()
+
+          def rep(old, new):
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"Expected one match, found {count}: {old[:160]!r}")
+              text = text.replace(old, new, 1)
+
+          rep(
+              '  product_id?: string | null;\n  focus?: string | null;',
+              '  product_id?: string | null;\n  sociavault_region?: string | null;\n  focus?: string | null;'
+          )
+          rep(
+              '  const [links, setLinks] = useState("");\n  const [regen, setRegen]',
+              '  const [links, setLinks] = useState("");\n  const [shopMarket, setShopMarket] = useState<"US" | "UK">("US");\n  const [regen, setRegen]'
+          )
+          rep(
+              '      await api<Batch>(`/batches/${selectedId}/products`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ links: list, start_generation: false }) });',
+              '      await api<Batch>(`/batches/${selectedId}/products`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ links: list, start_generation: false, region: shopMarket === "UK" ? "GB" : "US" }) });'
+          )
+          rep(
+              '      await api<Batch>(`/batches/${selectedId}/scanner/import`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ row_nums: rows, start_generation: false }) });',
+              '      await api<Batch>(`/batches/${selectedId}/scanner/import`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ row_nums: rows, start_generation: false, region: shopMarket === "UK" ? "GB" : "US" }) });'
+          )
+          rep(
+              '              <div className="scannerList">',
+              '              <label>TikTok Shop market<select value={shopMarket} onChange={e => setShopMarket(e.target.value as "US" | "UK")}><option value="US">US</option><option value="UK">UK</option></select><span className="fieldHint">UK uses SociaVault region GB.</span></label>\n              <div className="scannerList">'
+          )
+          rep(
+              '              <div className="panelHead"><div><h3>Import product links</h3><p>Paste one TikTok Shop product URL per line.</p></div></div>\n              <textarea className="linkBox"',
+              '              <div className="panelHead"><div><h3>Import product links</h3><p>Paste one TikTok Shop product URL per line.</p></div></div>\n              <label>TikTok Shop market<select value={shopMarket} onChange={e => setShopMarket(e.target.value as "US" | "UK")}><option value="US">US</option><option value="UK">UK</option></select><span className="fieldHint">Choose UK for UK Shop links. SociaVault receives region=GB.</span></label>\n              <textarea className="linkBox"'
+          )
+
+          path.write_text(text)
+          PY
+
+      - name: Build check
+        run: npm ci && npm run build
+
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/page.tsx
+          git commit -m "Add US UK shop market selector"
+          git push origin HEAD:main
