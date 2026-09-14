@@ -1,0 +1,42 @@
+name: Fix Create Batch Avatar
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/fix-create-batch-avatar.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Fix saved avatar create button
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('app/page.tsx')
+          text = p.read_text()
+          old = 'disabled={loading || (batchMode === "fashion_tryon" && !avatarB64)} onClick={createBatch}'
+          new = 'disabled={loading || (batchMode === "fashion_tryon" && !avatarB64 && !selectedAvatarId)} onClick={createBatch}'
+          if old not in text:
+              raise SystemExit('Create batch disabled condition not found')
+          p.write_text(text.replace(old, new, 1))
+          PY
+      - name: Build dashboard
+        run: npm ci && npm run build
+      - name: Commit fix
+        shell: bash
+        run: |
+          git config user.name "SkyShantell"
+          git config user.email "168357390+SkyShantell@users.noreply.github.com"
+          git add app/page.tsx
+          git commit -m "Allow saved avatars to create batches"
+          git push origin main
