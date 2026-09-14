@@ -865,7 +865,7 @@ function restoreBatch(batchId: string) {
             </div>
           </>}
           {batchMode === "fashion_tryon" && <label className="check wide"><input type="checkbox" checked={autoApprove} onChange={e => setAutoApprove(e.target.checked)} /> Auto-approve images and continue to video</label>}
-        </div><div className="modalFoot"><button className="ghost" onClick={() => setShowCreate(false)}>Cancel</button><button className="primary" disabled={loading || (batchMode === "fashion_tryon" && !avatarB64)} onClick={createBatch}>{loading ? "Creating…" : batchMode === "shoe_showcase" ? "Create Shoe Showcase" : "Create batch"}</button></div></div></div>}
+        </div><div className="modalFoot"><button className="ghost" onClick={() => setShowCreate(false)}>Cancel</button><button className="primary" disabled={loading || (batchMode === "fashion_tryon" && !avatarB64 && !selectedAvatarId)} onClick={createBatch}>{loading ? "Creating…" : batchMode === "shoe_showcase" ? "Create Shoe Showcase" : "Create batch"}</button></div></div></div>}
 
         {photoJob && <div className="modalBackdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setPhotoJobId(null); }}><div className="modal photoModal" onMouseDown={(e) => e.stopPropagation()}>
           <div className="modalHead"><div><h2>Select product photos</h2><p className="modalSub">{photoJob.product_name || "Imported product"}</p></div><button type="button" className="iconBtn modalCloseBtn" aria-label="Close product photo picker" title="Close" onClick={() => setPhotoJobId(null)}>×</button></div>
