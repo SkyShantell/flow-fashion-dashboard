@@ -534,6 +534,24 @@ function restoreBatch(batchId: string) {
     return refPick[job.id] ?? job.selected_refs ?? [];
   }
 
+  async function editProductName(job: Job) {
+    const name = window.prompt("Product name", job.product_name === "Unknown Product" ? "" : job.product_name || "");
+    if (name === null) return;
+    const trimmed = name.trim();
+    if (!trimmed || trimmed.length > 250) { setError("Enter a product name under 250 characters."); return; }
+    setLoading(true); setError("");
+    try {
+      await api<Job>(`/jobs/${job.id}/production-settings`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ product_name: trimmed }),
+      });
+      await loadSelected();
+      flash("Product name updated");
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not update product name"); }
+    finally { setLoading(false); }
+  }
+
   function openPhotoPicker(job: Job) {
     setRefPick(prev => ({ ...prev, [job.id]: prev[job.id] ?? job.selected_refs ?? [] }));
     setJobSettings(prev => ({ ...prev, [job.id]: prev[job.id] || { focus: job.focus || "outfit", scene: job.scene || selected?.scene || scenes[0], motion_style: job.motion_style || selected?.video_style || defaultMotionFor(selected?.creator_profile || "Male") } }));
@@ -848,7 +866,7 @@ function restoreBatch(batchId: string) {
         {showCreate && <div className="modalBackdrop"><div className="modal batchSettingsModal"><div className="modalHead"><div><h2>Create production batch</h2><p className="modalSub">Choose the workflow first. Shoe Showcase uses the exact dark-car, hands-only reference style and does not use an avatar.</p></div><button className="iconBtn" onClick={() => setShowCreate(false)}>×</button></div><div className="formGrid">
           <div className="wide settingBlock"><div className="settingLabel"><b>Workflow</b><span>These are separate generation pipelines.</span></div><div className="modeChoiceGrid">
             <button type="button" className={batchMode === "fashion_tryon" ? "modeChoice selected" : "modeChoice"} onClick={() => { setBatchMode("fashion_tryon"); if (name === "Today's Shoe Showcase") setName("Today's Fashion Batch"); }}><b>Fashion Try-On</b><span>Avatar mirror try-ons for outfits, tops, bottoms, bags and worn shoes.</span></button>
-            <button type="button" className={batchMode === "shoe_showcase" ? "modeChoice selected" : "modeChoice"} onClick={() => { setBatchMode("shoe_showcase"); if (name === "Today's Fashion Batch") setName("Today's Shoe Showcase"); setProfile("Female"); }}><b>Shoe Showcase</b><span>Dark luxury car · 3 reviewed start frames · 3 Omni clips · FFmpeg editorial cut.</span></button>
+            <button type="button" className={batchMode === "shoe_showcase" ? "modeChoice selected" : "modeChoice"} onClick={() => { setBatchMode("shoe_showcase"); if (name === "Today's Fashion Batch") setName("Today's Shoe Showcase"); setProfile("Female"); }}><b>Shoe Showcase</b><span>Dark luxury car · one approved Flow opener · Seedance 2.0 video.</span></button>
           </div></div>
           <label>Batch name<input value={name} onChange={e => setName(e.target.value)} /></label>
           <label>Flow Account<select value={newFlowAccountEmail} onChange={e => setNewFlowAccountEmail(e.target.value)}><option value="">Automatic / load balance</option>{flowAccounts.map(account => <option key={account.email} value={account.email}>{account.email}</option>)}</select></label>
@@ -870,7 +888,7 @@ function restoreBatch(batchId: string) {
         {photoJob && <div className="modalBackdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setPhotoJobId(null); }}><div className="modal photoModal" onMouseDown={(e) => e.stopPropagation()}>
           <div className="modalHead"><div><h2>Select product photos</h2><p className="modalSub">{photoJob.product_name || "Imported product"}</p></div><button type="button" className="iconBtn modalCloseBtn" aria-label="Close product photo picker" title="Close" onClick={() => setPhotoJobId(null)}>×</button></div>
           <div className="photoPickerTop"><div><b>{refsFor(photoJob).length} selected</b><span>{selected?.mode === "shoe_showcase" ? "Choose 1–5 images that show the exact shoe, colorway, sole, side profile and details clearly." : "Choose 1–5 images that show the exact product most clearly. Listing and review photos can be mixed. If one photo caused a risky-image failure, deselect it and pick safer references."}</span></div><button className="ghost small" onClick={() => setRefPick(prev => ({ ...prev, [photoJob.id]: [] }))}>Clear</button></div>
-          {selected?.mode === "shoe_showcase" ? <div className="preGenSettings shoePreGen"><div className="preGenHead"><b>Shoe Showcase</b><span>This item will use the dark-car shoe workflow from your reference videos and MD skill.</span></div><div className="shoeRuleGrid"><span>Shoe only</span><span>{selected.creator_profile || "Female"} hand</span><span>Dark luxury car</span><span>3 editorial frames</span><span>Exact start frames</span><span>FFmpeg cuts</span><span>No face / upper body / text</span></div></div> : <div className="preGenSettings"><div className="preGenHead"><b>Generation settings</b><span>Set these before generating. Product type controls framing; background controls the image; motion controls the video.</span></div><div className="preGenGrid">
+          {selected?.mode === "shoe_showcase" ? <div className="preGenSettings shoePreGen"><div className="preGenHead"><b>Shoe Showcase</b><span>Flow creates one opener; after approval, Seedance 2.0 creates the video.</span></div><div className="shoeRuleGrid"><span>Shoe only</span><span>{selected.creator_profile || "Female"} hand</span><span>Dark luxury car</span><span>One Flow opener</span><span>Approve one image</span><span>Seedance 2.0 · 5s</span><span>No face / upper body / generated text</span></div></div> : <div className="preGenSettings"><div className="preGenHead"><b>Generation settings</b><span>Set these before generating. Product type controls framing; background controls the image; motion controls the video.</span></div><div className="preGenGrid">
             <label>Product type <span className="detectedTag">Detected: {productTypeLabel(photoJob.focus)}</span><select value={settingsFor(photoJob).focus} onChange={e => setJobSettings(prev => ({ ...prev, [photoJob.id]: { ...settingsFor(photoJob), focus: e.target.value } }))}>{productTypes.map(x => <option key={x.value} value={x.value}>{x.label}</option>)}</select></label>
             <label>Background<select value={settingsFor(photoJob).scene} onChange={e => setJobSettings(prev => ({ ...prev, [photoJob.id]: { ...settingsFor(photoJob), scene: e.target.value } }))}>{scenes.map(x => <option key={x}>{x}</option>)}</select></label>
             <label>Motion style<select value={settingsFor(photoJob).motion_style} onChange={e => setJobSettings(prev => ({ ...prev, [photoJob.id]: { ...settingsFor(photoJob), motion_style: e.target.value } }))}>{Array.from(new Set([settingsFor(photoJob).motion_style, ...motionStylesFor(selected?.creator_profile || "Male")])).map(x => <option key={x}>{x}</option>)}</select><span className="fieldHint">Academy presets use the PDF sequence; product-specific bag/shoe/fit logic is automatic.</span></label>
@@ -1019,7 +1037,7 @@ function restoreBatch(batchId: string) {
               <textarea className="linkBox" value={links} onChange={e => setLinks(e.target.value)} placeholder="https://www.tiktok.com/view/product/..." />
               {String(selected.status || "open").toLowerCase() === "done" && <div className="doneNotice">This batch is done. New product links are locked.</div>}
               <button className="primary full" disabled={!links.trim() || loading || String(selected.status || "open").toLowerCase() === "done"} onClick={importLinks}>Import products</button>
-              <div className="miniInfo"><b>Current batch</b><span>{selected.mode === "shoe_showcase" ? `${selected.creator_profile} hand · Dark luxury car · 3-frame editorial cut` : `${selected.creator_profile} · ${(selected.scene_pool?.length || 1)} background${(selected.scene_pool?.length || 1) === 1 ? "" : "s"} · ${(selected.motion_pool?.length || 1)} motion style${(selected.motion_pool?.length || 1) === 1 ? "" : "s"}`}</span></div>
+              <div className="miniInfo"><b>Current batch</b><span>{selected.mode === "shoe_showcase" ? `${selected.creator_profile} hand · Dark luxury car · Seedance 2.0` : `${selected.creator_profile} · ${(selected.scene_pool?.length || 1)} background${(selected.scene_pool?.length || 1) === 1 ? "" : "s"} · ${(selected.motion_pool?.length || 1)} motion style${(selected.motion_pool?.length || 1) === 1 ? "" : "s"}`}</span></div>
             </div>
           </section>
 
@@ -1027,7 +1045,7 @@ function restoreBatch(batchId: string) {
             <div className="panelHead productionHead">
               <div>
                 <h3>Production queue</h3>
-                <p>{selected.mode === "shoe_showcase" ? "Confirm shoe photos → 3 editorial stills generate automatically → review → 3 start-frame Omni clips → FFmpeg hard-cut final." : "Each image starts automatically after you confirm its product photos. The Railway worker keeps processing even if this page is closed."}</p>
+                <p>{selected.mode === "shoe_showcase" ? "Confirm shoe photos → Flow generates one opener → approve it → Seedance 2.0 creates a 5-second video." : "Each image starts automatically after you confirm its product photos. The Railway worker keeps processing even if this page is closed."}</p>
               </div>
               <div className="bulkActions">
                 <button className="ghost small bulkVideo" disabled={loading || !selected.jobs.some(j => selected.mode === "shoe_showcase" ? editorialFramesReady(j) && j.video_status !== "completed" : j.image_status === "completed" && (j.video_status === "pending" || !j.video_status) && j.upscale_status !== "completed")} onClick={generateAllVideos}>{selected.mode === "shoe_showcase" ? "Generate all editorial videos" : "Generate all videos"}</button>
@@ -1048,7 +1066,7 @@ function restoreBatch(batchId: string) {
                   </div>
                   <div className="jobBody">
                     <h4>{job.product_name || "Importing product…"}</h4>
-                    <div className="productionBadges"><span>{shoeMode ? "Shoes" : productTypeLabel(job.focus)}</span><span>{job.scene || selected.scene || "Background"}</span><span>{shoeMode ? "Editorial Cut" : job.motion_style || selected.video_style || "Motion"}</span></div>
+                    <div className="productionBadges"><span>{shoeMode ? "Shoes" : productTypeLabel(job.focus)}</span><span>{job.scene || selected.scene || "Background"}</span><span>{shoeMode ? "Seedance 2.0 · 5s" : job.motion_style || selected.video_style || "Motion"}</span></div>
                     {!!job.selected_refs?.length && <div className="usedRefs"><div className="usedRefsHead"><b>Product photos used</b><span>{job.selected_refs.length}</span></div><div className="usedRefStrip">{job.selected_refs.map((url, i) => <a href={url} target="_blank" rel="noreferrer" title={`Open product reference ${i + 1}`} key={`${job.id}-used-${i}`}><img src={url} alt={`Selected product reference ${i + 1}`} /><span>{i + 1}</span></a>)}</div></div>}
 
                     {shoeMode && !!shots.length && <div className="editorialPanel">
@@ -1073,6 +1091,7 @@ function restoreBatch(batchId: string) {
                     {job.error && <div className="jobError">{job.error}</div>}
                     {canRepickPhotos(job) && <div className="miniHint">If the image failed because one product photo was too risky, re-pick safer product photos and generate again.</div>}
                     <div className="jobActions">
+                      {job.stage !== "pending_import" && job.stage !== "importing" && <button className="ghost small" disabled={loading} onClick={() => void editProductName(job)}>{!job.product_name || job.product_name === "Unknown Product" ? "Set product name" : "Edit name"}</button>}
                       {job.stage === "imported" && <button className="primary small" disabled={loading} onClick={() => openPhotoPicker(job)}>Select product photos</button>}
                       {job.stage === "ready_for_image" && <button className="primary small" disabled={loading} onClick={() => generateOneImage(job)}>{shoeMode ? "Generate editorial frames" : "Generate image"}</button>}
                       {canRepickPhotos(job) && <button className="ghost small" disabled={loading} onClick={() => openPhotoPicker(job)}>Repick photos</button>}

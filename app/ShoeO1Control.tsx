@@ -134,19 +134,20 @@ export default function ShoeO1Control() {
       });
       await loadActive(job.id ? batchId : "");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not start Kling O1 video");
+      setError(e instanceof Error ? e.message : "Could not start Seedance 2.0 video");
     } finally {
       setBusyJob("");
     }
   }
 
   async function regenerateO1(job: JobLite) {
-    if (!window.confirm(`Regenerate the Kling O1 video for “${job.product_name || "this shoe"}”?`)) return;
+    if (!window.confirm(`Regenerate the Seedance 2.0 video for “${job.product_name || "this shoe"}”?`)) return;
     setBusyJob(job.id); setError("");
     try {
       const info = await backend<VideoPromptInfo>(`/jobs/${job.id}/video-prompt`);
-      const prompt = (info.prompt_used || info.default_prompt || "").trim();
-      if (!prompt) throw new Error("No Kling O1 prompt is available for this shoe.");
+      const lastPrompt = (info.prompt_used || "").trim();
+      const prompt = (/10 seconds|Kling O1/i.test(lastPrompt) ? info.default_prompt : lastPrompt || info.default_prompt || "").trim();
+      if (!prompt) throw new Error("No Seedance 2.0 prompt is available for this shoe.");
       await backend<JobLite>(`/jobs/${job.id}/regenerate-video`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -154,7 +155,7 @@ export default function ShoeO1Control() {
       });
       await loadActive(batchId);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not regenerate Kling O1 video");
+      setError(e instanceof Error ? e.message : "Could not regenerate Seedance 2.0 video");
     } finally {
       setBusyJob("");
     }
@@ -180,17 +181,17 @@ export default function ShoeO1Control() {
               onClick={() => void approveAndGenerate(job)}
               title={`Approved Flow opener becomes @image_1; ${refs} product reference${refs === 1 ? "" : "s"} follow as @image_2+`}
             >
-              {busy ? "Queueing…" : "Approve + Kling O1"}
+              {busy ? "Queueing…" : "Approve + Seedance 2.0"}
             </button>
           )}
           {processing && (
             <span style={{ alignSelf: "center", fontSize: 11, color: "#aaa", padding: "0 4px" }}>
-              Kling O1 · {job.video_status || "processing"}
+              Seedance 2.0 · {job.video_status || "processing"}
             </span>
           )}
           {finished && (
             <button type="button" className="ghost small" disabled={busy} onClick={() => void regenerateO1(job)}>
-              {busy ? "Queueing…" : "Regenerate Kling O1"}
+              {busy ? "Queueing…" : "Regenerate Seedance 2.0"}
             </button>
           )}
         </div>,
@@ -209,7 +210,7 @@ export default function ShoeO1Control() {
     `}</style>
     {headerTarget && createPortal(
       <p className="shoeO1HeaderCopy">
-        Confirm shoe photos → Flow generates one opening image → approve it → Kling O1 creates the 10-second 9:16 video using that approved image as @image_1 plus the selected shoe references.
+        Confirm shoe photos → Flow generates one opening image → approve it → Seedance 2.0 creates the 5-second 9:16 video using that approved image as @image_1 plus the selected shoe references.
       </p>,
       headerTarget,
     )}

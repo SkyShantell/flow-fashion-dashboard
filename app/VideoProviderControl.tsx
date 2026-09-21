@@ -142,7 +142,7 @@ export default function VideoProviderControl() {
           backdropFilter: "blur(14px)", WebkitBackdropFilter: "blur(14px)",
         }}
       >
-        Video · {isShoe ? "Kling O1" : isKling ? "Kling 3.0" : "Google Flow"}
+        Video · {isShoe ? "Seedance 2.0" : isKling ? "Kling 3.0" : "Google Flow"}
       </button>
     );
   }
@@ -159,7 +159,7 @@ export default function VideoProviderControl() {
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
         <div>
           <div style={{ fontSize: 11, letterSpacing: ".11em", textTransform: "uppercase", opacity: .6 }}>Video Provider</div>
-          <div style={{ fontSize: 15, fontWeight: 800, marginTop: 2 }}>{isShoe ? "Shoe Showcase · Kling O1" : "Choose Flow or Kling"}</div>
+          <div style={{ fontSize: 15, fontWeight: 800, marginTop: 2 }}>{isShoe ? "Shoe Showcase · Seedance 2.0" : "Choose Flow or Kling"}</div>
         </div>
         <button type="button" onClick={() => setOpen(false)} aria-label="Minimize video provider selector" style={{ border: 0, background: "transparent", color: "#aaa", fontSize: 20, cursor: "pointer", lineHeight: 1 }}>−</button>
       </div>
@@ -178,10 +178,10 @@ export default function VideoProviderControl() {
       {isShoe ? (
         <div style={{ marginTop: 12 }}>
           <div style={{ border: "1px solid #8a6cff", background: "rgba(123,92,255,.22)", color: "#fff", borderRadius: 11, padding: "11px 10px", fontWeight: 800, textAlign: "center" }}>
-            Kling O1 · Locked for shoes
+            Seedance 2.0 · Locked for shoes
           </div>
           <div style={{ marginTop: 10, color: "#b8b8c2", fontSize: 11.5, lineHeight: 1.5 }}>
-            Flow creates the one image you approve. Kling O1 then makes the 10-second 9:16 video with that approved image as @image_1 and up to 6 shoe reference images as @image_2–@image_7.
+            Flow creates the one image you approve. Seedance 2.0 then makes the 5-second 9:16 video with that approved image as @image_1 and up to 6 shoe reference images as @image_2–@image_7.
           </div>
         </div>
       ) : (
@@ -220,7 +220,7 @@ export default function VideoProviderControl() {
       )}
 
       <div style={{ marginTop: 7, color: "#858591", fontSize: 10.5 }}>
-        {batchName} · {isShoe ? "Flow image → Kling O1 video" : "Manual selection only · no automatic fallback"}
+        {batchName} · {isShoe ? "Flow image → Seedance 2.0 video" : "Manual selection only · no automatic fallback"}
       </div>
       {error && <div style={{ marginTop: 9, color: "#ff9999", fontSize: 11, lineHeight: 1.35 }}>{error}</div>}
     </aside>

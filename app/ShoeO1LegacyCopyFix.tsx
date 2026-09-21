@@ -3,11 +3,11 @@
 import { useEffect } from "react";
 
 const exactReplacements: Record<string, string> = {
-  "Dark luxury car · 3 reviewed start frames · 3 Omni clips · FFmpeg editorial cut.": "Dark luxury car · 1 Flow opener · approve once · Kling O1 10-second video.",
-  "Locked to the reference-video style you supplied.": "One Flow opener only, then Kling O1 uses it as @image_1.",
-  "This item will use the dark-car shoe workflow from your reference videos and MD skill.": "Choose the shoe references. Flow generates one opener only; after approval, Kling O1 creates the video.",
-  "Shoe Showcase remains on its dedicated Google Flow / Omni 3-clip editorial pipeline.": "Shoe Showcase uses one Google Flow opener, then Kling O1 creates the 10-second video.",
-  "Confirm shoe photos → 3 editorial stills generate automatically → review → 3 start-frame Omni clips → FFmpeg hard-cut final.": "Confirm shoe photos → Flow generates one opener → approve it → Kling O1 creates the 10-second video.",
+  "Dark luxury car · 3 reviewed start frames · 3 Omni clips · FFmpeg editorial cut.": "Dark luxury car · 1 Flow opener · approve once · Seedance 2.0 5-second video.",
+  "Locked to the reference-video style you supplied.": "One Flow opener only, then Seedance 2.0 uses it as @image_1.",
+  "This item will use the dark-car shoe workflow from your reference videos and MD skill.": "Choose the shoe references. Flow generates one opener only; after approval, Seedance 2.0 creates the video.",
+  "Shoe Showcase remains on its dedicated Google Flow / Omni 3-clip editorial pipeline.": "Shoe Showcase uses one Google Flow opener, then Seedance 2.0 creates the 5-second video.",
+  "Confirm shoe photos → 3 editorial stills generate automatically → review → 3 start-frame Omni clips → FFmpeg hard-cut final.": "Confirm shoe photos → Flow generates one opener → approve it → Seedance 2.0 creates the 5-second video.",
 };
 
 function replaceExactText(root: ParentNode = document) {
@@ -39,8 +39,8 @@ export default function ShoeO1LegacyCopyFix() {
         "Dark luxury car",
         "1 Flow opener",
         "Approve one photo",
-        "Kling O1",
-        "10-second video",
+        "Seedance 2.0",
+        "5-second video",
         "@image_1 = approved opener",
         "Up to 6 extra shoe refs",
         "No extra Flow frames",
@@ -52,7 +52,7 @@ export default function ShoeO1LegacyCopyFix() {
         "1 Flow opener",
         "Dark luxury car",
         "Approve one photo",
-        "Kling O1 · 10 sec",
+        "Seedance 2.0 · 5 sec",
         "@image_1 = approved opener",
         "Up to 6 extra shoe refs",
       ]);
@@ -65,7 +65,7 @@ export default function ShoeO1LegacyCopyFix() {
         document.querySelectorAll<HTMLElement>(".jobCard .productionBadges").forEach(row => {
           const badges = row.querySelectorAll<HTMLElement>(":scope > span");
           const last = badges[badges.length - 1];
-          if (last && last.textContent !== "Kling O1 · 10s") last.textContent = "Kling O1 · 10s";
+          if (last && last.textContent !== "Seedance 2.0 · 5s") last.textContent = "Seedance 2.0 · 5s";
         });
       }
     };
