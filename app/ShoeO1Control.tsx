@@ -179,7 +179,7 @@ export default function ShoeO1Control() {
               className="primary small"
               disabled={busy}
               onClick={() => void approveAndGenerate(job)}
-              title={`Approved Flow opener becomes @image_1; ${refs} product reference${refs === 1 ? "" : "s"} follow as @image_2+`}
+              title={`Approved Flow opener becomes @image1; ${refs} product reference${refs === 1 ? "" : "s"} follow as @image2+`}
             >
               {busy ? "Queueing…" : "Approve + Seedance 2.0"}
             </button>
@@ -210,7 +210,7 @@ export default function ShoeO1Control() {
     `}</style>
     {headerTarget && createPortal(
       <p className="shoeO1HeaderCopy">
-        Confirm shoe photos → Flow generates one opening image → approve it → Seedance 2.0 creates the 5-second 9:16 video using that approved image as @image_1 plus the selected shoe references.
+        Confirm shoe photos → Flow generates one opening image → approve it → Seedance 2.0 creates a 5-second 9:16 video using the opener, your shoe photos, and the two-second reference video.
       </p>,
       headerTarget,
     )}
