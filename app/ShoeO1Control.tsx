@@ -146,7 +146,7 @@ export default function ShoeO1Control() {
     try {
       const info = await backend<VideoPromptInfo>(`/jobs/${job.id}/video-prompt`);
       const lastPrompt = (info.prompt_used || "").trim();
-      const prompt = (/10 seconds|Kling O1/i.test(lastPrompt) ? info.default_prompt : lastPrompt || info.default_prompt || "").trim();
+      const prompt = (/10 seconds|5 seconds|Kling O1/i.test(lastPrompt) ? info.default_prompt : lastPrompt || info.default_prompt || "").trim();
       if (!prompt) throw new Error("No Seedance 2.0 prompt is available for this shoe.");
       await backend<JobLite>(`/jobs/${job.id}/regenerate-video`, {
         method: "POST",
@@ -210,7 +210,7 @@ export default function ShoeO1Control() {
     `}</style>
     {headerTarget && createPortal(
       <p className="shoeO1HeaderCopy">
-        Confirm shoe photos → Flow generates one opening image → approve it → Seedance 2.0 creates a 5-second 9:16 video using the opener, your shoe photos, and the two-second reference video.
+        Confirm shoe photos → Flow generates one opening image → approve it → Seedance 2.0 creates an 8-second 9:16 video using the opener, your shoe photos, and the two-second reference video.
       </p>,
       headerTarget,
     )}

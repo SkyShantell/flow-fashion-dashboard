@@ -181,7 +181,7 @@ export default function VideoProviderControl() {
             Seedance 2.0 · Locked for shoes
           </div>
           <div style={{ marginTop: 10, color: "#b8b8c2", fontSize: 11.5, lineHeight: 1.5 }}>
-            Flow creates the opener you approve. Seedance 2.0 uses it as @image1 with your shoe photos, plus a two-second black reference video, to make a 5-second 9:16 video.
+            Flow creates the opener you approve. Seedance 2.0 uses it as @image1 with your shoe photos, plus a two-second black reference video, to make an 8-second 9:16 video.
           </div>
         </div>
       ) : (
