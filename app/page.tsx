@@ -1087,7 +1087,7 @@ function restoreBatch(batchId: string) {
                       {allClipsReady && job.video_status !== "processing" && <button className="ghost full" disabled={loading} onClick={() => rebuildEditorialVideo(job)}>Rebuild FFmpeg cut</button>}
                     </div>}
 
-                    <div className="jobMeta"><span>Image: {job.image_status}</span><span>Video: {job.video_status}</span><span>1080p: {job.upscale_status}</span></div>
+                    <div className="jobMeta"><span>Image: {job.image_status}</span><span>Video: {job.video_status}</span><span>{shoeMode ? (job.video_resolution || "720p") : "1080p"}: {job.upscale_status}</span></div>
                     {job.error && <div className="jobError">{job.error}</div>}
                     {canRepickPhotos(job) && <div className="miniHint">If the image failed because one product photo was too risky, re-pick safer product photos and generate again.</div>}
                     <div className="jobActions">
