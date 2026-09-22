@@ -74,10 +74,11 @@ export default function RedoFFmpegControl() {
   useEffect(() => {
     if (!batches.length) return;
     const sync = () => {
-      const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>(".batchBtn"));
-      const activeIndex = buttons.findIndex(button => button.classList.contains("active"));
-      const matching = activeIndex >= 0 ? batches[activeIndex] : undefined;
-      if (matching) setBatchId(current => current === matching.id ? current : matching.id);
+      const active = document.querySelector<HTMLButtonElement>(".batchBtn.active");
+      const activeBatchId = String(active?.dataset.batchId || "").trim();
+      if (activeBatchId && batches.some(batch => batch.id === activeBatchId)) {
+        setBatchId(current => current === activeBatchId ? current : activeBatchId);
+      }
     };
     sync();
     const timer = window.setInterval(sync, 500);

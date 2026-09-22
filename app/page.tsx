@@ -814,7 +814,7 @@ function restoreBatch(batchId: string) {
 </div>
 <div className="batchList">
   {visibleBatches.map(b => <div key={b.id} className="batchRow">
-    <button className={`batchBtn ${selectedId === b.id ? "active" : ""}`} onClick={() => setSelectedId(b.id)}><b>{b.name || "Untitled batch"}</b><span>{b.mode === "shoe_showcase" ? "Shoe Showcase" : (b.avatar_name ? `Fashion Try-On · ${b.avatar_name}` : "Fashion Try-On")} · {Number(b.counts?.products || 0)} products · {b.status}</span></button>
+    <button data-batch-id={b.id} className={`batchBtn ${selectedId === b.id ? "active" : ""}`} onClick={() => setSelectedId(b.id)}><b>{b.name || "Untitled batch"}</b><span>{b.mode === "shoe_showcase" ? "Shoe Showcase" : (b.avatar_name ? `Fashion Try-On · ${b.avatar_name}` : "Fashion Try-On")} · {Number(b.counts?.products || 0)} products · {b.status}</span></button>
     <button className="batchHideBtn" onClick={() => hideBatch(b.id)} title="Hide batch" aria-label={`Hide ${b.name || "batch"}`}>Hide</button>
   </div>)}
   {!visibleBatches.length && batches.length > 0 && <div className="muted">All batches are hidden.</div>}
