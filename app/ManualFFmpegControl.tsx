@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 
 type JobLite = {
@@ -31,6 +31,9 @@ type OverlayConfig = {
   headline_color: string;
   subheadline_color: string;
   placement: string;
+  text_scale: number;
+  position_x: number;
+  position_y: number;
   emoji_mode?: string;
   presets: OverlayPreset[];
   colors: OverlayColor[];
@@ -39,7 +42,7 @@ type OverlayConfig = {
 
 type OverlayDraft = Pick<
   OverlayConfig,
-  "headline" | "subheadline" | "preset" | "emoji_prefix" | "emoji_suffix" | "headline_color" | "subheadline_color" | "placement"
+  "headline" | "subheadline" | "preset" | "emoji_prefix" | "emoji_suffix" | "headline_color" | "subheadline_color" | "placement" | "text_scale" | "position_x" | "position_y"
 >;
 
 async function backend<T>(path: string, init?: RequestInit): Promise<T> {
@@ -170,6 +173,7 @@ export default function ManualFFmpegControl() {
   const [editorConfig, setEditorConfig] = useState<OverlayConfig | null>(null);
   const [draft, setDraft] = useState<OverlayDraft | null>(null);
   const [loadingEditor, setLoadingEditor] = useState(false);
+  const [draggingText, setDraggingText] = useState(false);
 
   const loadBatches = useCallback(async () => {
     try {
@@ -248,6 +252,9 @@ export default function ManualFFmpegControl() {
         headline_color: config.headline_color || "white",
         subheadline_color: config.subheadline_color || "white",
         placement: config.placement || "middle",
+        text_scale: Number(config.text_scale || 0.65),
+        position_x: Number(config.position_x || 0.50),
+        position_y: Number(config.position_y || 0.46),
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not open text styling");
@@ -255,6 +262,13 @@ export default function ManualFFmpegControl() {
     } finally {
       setLoadingEditor(false);
     }
+  }
+
+  function setPreviewPosition(event: ReactPointerEvent<HTMLDivElement>) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = Math.max(0.08, Math.min(0.92, (event.clientX - rect.left) / rect.width));
+    const y = Math.max(0.08, Math.min(0.92, (event.clientY - rect.top) / rect.height));
+    setDraft(current => current ? { ...current, position_x: x, position_y: y, placement: "custom" } : current);
   }
 
   async function sendToFFmpeg() {
@@ -330,7 +344,9 @@ export default function ManualFFmpegControl() {
 
   const headlineHex = editorConfig?.colors.find(color => color.id === draft?.headline_color)?.hex || "#fff";
   const subheadlineHex = editorConfig?.colors.find(color => color.id === draft?.subheadline_color)?.hex || "#fff";
-  const placementAlign = draft?.placement === "upper" ? "flex-start" : draft?.placement === "lower" ? "flex-end" : "center";
+  const previewVideoUrl = editorJob?.video_url
+    ? `${editorJob.video_url}${editorJob.video_url.includes("?") ? "&" : "?"}preview=1`
+    : "";
   const appleDevice = isAppleDevice();
 
   return <>
@@ -405,24 +421,55 @@ export default function ManualFFmpegControl() {
                     <select value={draft.subheadline_color} onChange={e => setDraft({ ...draft, subheadline_color: e.target.value })} style={{ background: "#1d1d24", color: "#fff", border: "1px solid #34343d", borderRadius: 10, padding: "9px" }}>{editorConfig.colors.map(color => <option key={color.id} value={color.id}>{color.id.replaceAll("_", " ")}</option>)}</select>
                   </label>
                   <label style={{ display: "grid", gap: 6, fontSize: 12, color: "#bbb" }}>Placement
-                    <select value={draft.placement} onChange={e => setDraft({ ...draft, placement: e.target.value })} style={{ background: "#1d1d24", color: "#fff", border: "1px solid #34343d", borderRadius: 10, padding: "9px" }}>{editorConfig.placements.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select>
+                    <select value={draft.placement} onChange={e => {
+                      const placement = e.target.value;
+                      const y = placement === "upper" ? 0.24 : placement === "lower" ? 0.68 : placement === "middle" ? 0.46 : draft.position_y;
+                      setDraft({ ...draft, placement, position_y: y });
+                    }} style={{ background: "#1d1d24", color: "#fff", border: "1px solid #34343d", borderRadius: 10, padding: "9px" }}>
+                      {editorConfig.placements.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
+                      <option value="custom">Custom (dragged)</option>
+                    </select>
                   </label>
+                </div>
+
+                <div style={{ display: "grid", gap: 10, padding: 12, border: "1px solid #34343d", borderRadius: 12, background: "#18181f" }}>
+                  <label style={{ display: "grid", gap: 7, fontSize: 12, color: "#bbb" }}>
+                    <span style={{ display: "flex", justifyContent: "space-between", gap: 12 }}><span>Text size</span><b style={{ color: "#fff" }}>{Math.round(draft.text_scale * 100)}%</b></span>
+                    <input type="range" min="0.40" max="1.30" step="0.05" value={draft.text_scale} onChange={e => setDraft({ ...draft, text_scale: Number(e.target.value) })} />
+                  </label>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    <label style={{ display: "grid", gap: 7, fontSize: 11, color: "#999" }}>
+                      Horizontal position
+                      <input type="range" min="0.08" max="0.92" step="0.01" value={draft.position_x} onChange={e => setDraft({ ...draft, position_x: Number(e.target.value), placement: "custom" })} />
+                    </label>
+                    <label style={{ display: "grid", gap: 7, fontSize: 11, color: "#999" }}>
+                      Vertical position
+                      <input type="range" min="0.08" max="0.92" step="0.01" value={draft.position_y} onChange={e => setDraft({ ...draft, position_y: Number(e.target.value), placement: "custom" })} />
+                    </label>
+                  </div>
                 </div>
               </div>
 
               <div style={{ display: "grid", alignContent: "start", gap: 9 }}>
-                <div style={{ fontSize: 12, color: "#bbb" }}>Layout preview</div>
-                <div style={{ aspectRatio: "9 / 16", maxHeight: 560, width: "100%", borderRadius: 16, border: "1px solid #34343d", background: "linear-gradient(155deg,#3c3a3e 0%,#17171b 48%,#302822 100%)", display: "flex", flexDirection: "column", justifyContent: placementAlign, alignItems: "center", padding: "14% 8%", overflow: "hidden", boxShadow: "inset 0 0 90px rgba(0,0,0,.3)" }}>
-                  <div style={{ width: "100%", textAlign: "center", textShadow: "0 2px 8px rgba(0,0,0,.65)" }}>
-                    <div style={{ ...previewFont(draft.preset, "headline"), color: headlineHex, lineHeight: 1.05, overflowWrap: "anywhere" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 12, color: "#bbb" }}><span>Live video preview</span><b style={{ color: draggingText ? "#b9a9ff" : "#888", fontSize: 10 }}>Drag text to place it</b></div>
+                <div
+                  onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); setDraggingText(true); setPreviewPosition(e); }}
+                  onPointerMove={e => { if (draggingText) setPreviewPosition(e); }}
+                  onPointerUp={e => { setDraggingText(false); if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId); }}
+                  onPointerCancel={() => setDraggingText(false)}
+                  style={{ position: "relative", aspectRatio: "9 / 16", maxHeight: 560, width: "100%", borderRadius: 16, border: draggingText ? "1px solid #8a6cff" : "1px solid #34343d", background: "linear-gradient(155deg,#3c3a3e 0%,#17171b 48%,#302822 100%)", overflow: "hidden", boxShadow: "inset 0 0 90px rgba(0,0,0,.3)", cursor: draggingText ? "grabbing" : "crosshair", touchAction: "none", userSelect: "none" }}
+                >
+                  {previewVideoUrl && <video key={previewVideoUrl} src={previewVideoUrl} muted playsInline autoPlay loop preload="metadata" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", pointerEvents: "none" }} />}
+                  <div style={{ position: "absolute", left: `${draft.position_x * 100}%`, top: `${draft.position_y * 100}%`, transform: "translate(-50%,-50%)", width: "max-content", maxWidth: "88%", padding: "2px 4px", textAlign: "center", textShadow: "0 2px 8px rgba(0,0,0,.8)", pointerEvents: "none", outline: draggingText ? "1px dashed rgba(185,169,255,.72)" : "1px dashed rgba(255,255,255,.18)", outlineOffset: 5 }}>
+                    <div style={{ ...previewFont(draft.preset, "headline"), fontSize: previewFont(draft.preset, "headline").fontSize * draft.text_scale, color: headlineHex, lineHeight: 1.05, overflowWrap: "anywhere" }}>
                       {draft.emoji_prefix && <span style={{ fontFamily: '"Apple Color Emoji", system-ui, sans-serif', fontSize: ".72em", marginRight: ".12em" }}>{draft.emoji_prefix}</span>}
                       {draft.headline || "Headline"}
                       {draft.emoji_suffix && <span style={{ fontFamily: '"Apple Color Emoji", system-ui, sans-serif', fontSize: ".72em", marginLeft: ".12em" }}>{draft.emoji_suffix}</span>}
                     </div>
-                    {draft.subheadline && <div style={{ ...previewFont(draft.preset, "subheadline"), color: subheadlineHex, lineHeight: 1.08, marginTop: 6, overflowWrap: "anywhere" }}>{draft.subheadline}</div>}
+                    {draft.subheadline && <div style={{ ...previewFont(draft.preset, "subheadline"), fontSize: previewFont(draft.preset, "subheadline").fontSize * draft.text_scale, color: subheadlineHex, lineHeight: 1.08, marginTop: 6 * draft.text_scale, overflowWrap: "anywhere" }}>{draft.subheadline}</div>}
                   </div>
                 </div>
-                <div style={{ fontSize: 10.5, color: "#777", lineHeight: 1.4 }}>The preview can follow this device’s local emoji style. The final export uses the shared Apple emoji artwork, then FFmpeg composites the finished transparent layer over the real video.</div>
+                <div style={{ fontSize: 10.5, color: "#777", lineHeight: 1.4 }}>This is the actual video. Drag the text on the preview or use the sliders for precise placement. The dashed guide is editor-only and will not appear in the export.</div>
               </div>
             </div>
           )}
