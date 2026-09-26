@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 
 type JobLite = {
@@ -174,6 +174,8 @@ export default function ManualFFmpegControl() {
   const [draft, setDraft] = useState<OverlayDraft | null>(null);
   const [loadingEditor, setLoadingEditor] = useState(false);
   const [draggingText, setDraggingText] = useState(false);
+  const [previewFrameReady, setPreviewFrameReady] = useState(false);
+  const previewVideoRef = useRef<HTMLVideoElement | null>(null);
 
   const loadBatches = useCallback(async () => {
     try {
@@ -238,6 +240,7 @@ export default function ManualFFmpegControl() {
     setEditorJob(job);
     setEditorConfig(null);
     setDraft(null);
+    setPreviewFrameReady(false);
     setLoadingEditor(true);
     setError("");
     try {
@@ -450,16 +453,41 @@ export default function ManualFFmpegControl() {
                 </div>
               </div>
 
-              <div style={{ display: "grid", alignContent: "start", gap: 9 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 12, color: "#bbb" }}><span>Live video preview</span><b style={{ color: draggingText ? "#b9a9ff" : "#888", fontSize: 10 }}>Drag text to place it</b></div>
+              <div style={{ display: "grid", alignContent: "start", justifyItems: "center", gap: 9 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, width: "min(100%, 315px)", fontSize: 12, color: "#bbb" }}><span>9:16 still-frame preview</span><b style={{ color: draggingText ? "#b9a9ff" : "#888", fontSize: 10 }}>Drag text to place it</b></div>
                 <div
                   onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); setDraggingText(true); setPreviewPosition(e); }}
                   onPointerMove={e => { if (draggingText) setPreviewPosition(e); }}
                   onPointerUp={e => { setDraggingText(false); if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId); }}
                   onPointerCancel={() => setDraggingText(false)}
-                  style={{ position: "relative", aspectRatio: "9 / 16", maxHeight: 560, width: "100%", borderRadius: 16, border: draggingText ? "1px solid #8a6cff" : "1px solid #34343d", background: "linear-gradient(155deg,#3c3a3e 0%,#17171b 48%,#302822 100%)", overflow: "hidden", boxShadow: "inset 0 0 90px rgba(0,0,0,.3)", cursor: draggingText ? "grabbing" : "crosshair", touchAction: "none", userSelect: "none" }}
+                  style={{ position: "relative", aspectRatio: "9 / 16", width: "min(100%, 315px)", borderRadius: 16, border: draggingText ? "1px solid #8a6cff" : "1px solid #34343d", background: "linear-gradient(155deg,#3c3a3e 0%,#17171b 48%,#302822 100%)", overflow: "hidden", boxShadow: "inset 0 0 90px rgba(0,0,0,.3)", cursor: draggingText ? "grabbing" : "crosshair", touchAction: "none", userSelect: "none" }}
                 >
-                  {previewVideoUrl && <video key={previewVideoUrl} src={previewVideoUrl} muted playsInline autoPlay loop preload="metadata" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", pointerEvents: "none" }} />}
+                  {previewVideoUrl && <video
+                    ref={previewVideoRef}
+                    key={previewVideoUrl}
+                    src={previewVideoUrl}
+                    muted
+                    playsInline
+                    preload="auto"
+                    onLoadedMetadata={event => {
+                      const video = event.currentTarget;
+                      video.pause();
+                      const duration = Number.isFinite(video.duration) ? video.duration : 0;
+                      const stillAt = duration > 0.5 ? Math.min(1, duration * 0.15) : 0;
+                      if (stillAt > 0.05) video.currentTime = stillAt;
+                      else setPreviewFrameReady(true);
+                    }}
+                    onLoadedData={event => {
+                      event.currentTarget.pause();
+                      if (event.currentTarget.currentTime > 0.05) setPreviewFrameReady(true);
+                    }}
+                    onSeeked={event => {
+                      event.currentTarget.pause();
+                      setPreviewFrameReady(true);
+                    }}
+                    style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", opacity: previewFrameReady ? 1 : 0, pointerEvents: "none" }}
+                  />}
+                  {!previewFrameReady && <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", color: "#888", fontSize: 11, pointerEvents: "none" }}>Loading video frame…</div>}
                   <div style={{ position: "absolute", left: `${draft.position_x * 100}%`, top: `${draft.position_y * 100}%`, transform: "translate(-50%,-50%)", width: "max-content", maxWidth: "88%", padding: "2px 4px", textAlign: "center", textShadow: "0 2px 8px rgba(0,0,0,.8)", pointerEvents: "none", outline: draggingText ? "1px dashed rgba(185,169,255,.72)" : "1px dashed rgba(255,255,255,.18)", outlineOffset: 5 }}>
                     <div style={{ ...previewFont(draft.preset, "headline"), fontSize: previewFont(draft.preset, "headline").fontSize * draft.text_scale, color: headlineHex, lineHeight: 1.05, overflowWrap: "anywhere" }}>
                       {draft.emoji_prefix && <span style={{ fontFamily: '"Apple Color Emoji", system-ui, sans-serif', fontSize: ".72em", marginRight: ".12em" }}>{draft.emoji_prefix}</span>}
@@ -469,7 +497,7 @@ export default function ManualFFmpegControl() {
                     {draft.subheadline && <div style={{ ...previewFont(draft.preset, "subheadline"), fontSize: previewFont(draft.preset, "subheadline").fontSize * draft.text_scale, color: subheadlineHex, lineHeight: 1.08, marginTop: 6 * draft.text_scale, overflowWrap: "anywhere" }}>{draft.subheadline}</div>}
                   </div>
                 </div>
-                <div style={{ fontSize: 10.5, color: "#777", lineHeight: 1.4 }}>This is the actual video. Drag the text on the preview or use the sliders for precise placement. The dashed guide is editor-only and will not appear in the export.</div>
+                <div style={{ width: "min(100%, 315px)", fontSize: 10.5, color: "#777", lineHeight: 1.4 }}>This is a paused frame from the actual video in the final 9:16 shape. Drag the text here or use the sliders for precise placement. The dashed guide is editor-only.</div>
               </div>
             </div>
           )}
