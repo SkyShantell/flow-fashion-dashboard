@@ -23,6 +23,7 @@ type OverlayColor = { id: string; hex: string };
 type OverlayPlacement = { id: string; label: string };
 type OverlayConfig = {
   headline: string;
+  headline_options?: string[];
   subheadline: string;
   preset: string;
   emoji_prefix: string;
@@ -61,17 +62,17 @@ function sameTargets(a: HTMLElement[], b: HTMLElement[]) {
 
 function previewFont(preset: string, line: "headline" | "subheadline") {
   if (preset === "luxury_serif") return line === "headline"
-    ? { fontFamily: "Georgia, serif", fontStyle: "italic", fontWeight: 400, fontSize: 33 }
-    : { fontFamily: "Georgia, serif", fontStyle: "normal", fontWeight: 400, fontSize: 22, textTransform: "uppercase" as const };
+    ? { fontFamily: "Georgia, serif", fontStyle: "italic", fontWeight: 400, fontSize: 26 }
+    : { fontFamily: "Georgia, serif", fontStyle: "normal", fontWeight: 400, fontSize: 17, textTransform: "uppercase" as const };
   if (preset === "big_editorial") return line === "headline"
-    ? { fontFamily: "Georgia, serif", fontStyle: "normal", fontWeight: 400, fontSize: 42 }
-    : { fontFamily: "Georgia, serif", fontStyle: "normal", fontWeight: 400, fontSize: 22 };
+    ? { fontFamily: "Georgia, serif", fontStyle: "normal", fontWeight: 400, fontSize: 32 }
+    : { fontFamily: "Georgia, serif", fontStyle: "normal", fontWeight: 400, fontSize: 17 };
   if (preset === "serif_pop") return line === "headline"
-    ? { fontFamily: "Georgia, serif", fontStyle: "normal", fontWeight: 400, fontSize: 36 }
-    : { fontFamily: "Arial Rounded MT Bold, Arial, sans-serif", fontStyle: "normal", fontWeight: 800, fontSize: 22 };
+    ? { fontFamily: "Georgia, serif", fontStyle: "normal", fontWeight: 400, fontSize: 28 }
+    : { fontFamily: "Arial Rounded MT Bold, Arial, sans-serif", fontStyle: "normal", fontWeight: 800, fontSize: 17 };
   return line === "headline"
-    ? { fontFamily: "Arial, sans-serif", fontStyle: "normal", fontWeight: 800, fontSize: 28 }
-    : { fontFamily: "Arial, sans-serif", fontStyle: "normal", fontWeight: 500, fontSize: 20 };
+    ? { fontFamily: "Arial, sans-serif", fontStyle: "normal", fontWeight: 800, fontSize: 22 }
+    : { fontFamily: "Arial, sans-serif", fontStyle: "normal", fontWeight: 500, fontSize: 16 };
 }
 
 function emojiTokens(value: string): string[] {
@@ -351,6 +352,18 @@ export default function ManualFFmpegControl() {
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1.05fr) minmax(280px,.95fr)", gap: 18, padding: 20 }}>
               <div style={{ display: "grid", gap: 14 }}>
+                <label style={{ display: "grid", gap: 6, fontSize: 12, color: "#bbb" }}>Suggested on-screen text
+                  <select
+                    value={(editorConfig.headline_options || []).includes(draft.headline) ? draft.headline : ""}
+                    onChange={e => { if (e.target.value) setDraft({ ...draft, headline: e.target.value }); }}
+                    style={{ background: "#1d1d24", color: "#fff", border: "1px solid #34343d", borderRadius: 10, padding: "10px 11px", font: "inherit" }}
+                  >
+                    <option value="">Choose one of five outfit-aware options</option>
+                    {(editorConfig.headline_options || []).map((option, index) => (
+                      <option key={`${index}-${option}`} value={option}>{index + 1}. {option}</option>
+                    ))}
+                  </select>
+                </label>
                 <label style={{ display: "grid", gap: 6, fontSize: 12, color: "#bbb" }}>Headline
                   <input value={draft.headline} maxLength={120} onChange={e => setDraft({ ...draft, headline: e.target.value })} style={{ background: "#1d1d24", color: "#fff", border: "1px solid #34343d", borderRadius: 10, padding: "10px 11px", font: "inherit" }} />
                 </label>
