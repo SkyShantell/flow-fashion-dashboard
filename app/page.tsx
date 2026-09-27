@@ -41,6 +41,9 @@ type Batch = {
   scene_pool?: string[];
   creator_profile?: string | null;
   video_style?: string | null;
+  video_provider?: string | null;
+  shoe_pov_format?: string | null;
+  shoe_pov_skin_tone?: string | null;
   motion_pool?: string[];
   auto_approve: boolean;
   status: string;
@@ -132,6 +135,14 @@ function savedAvatarSrc(avatar: SavedAvatar) {
   return "";
 }
 
+function isFlowShoePov(batch: Batch | null | undefined) {
+  return batch?.mode === "shoe_showcase" && batch.video_provider === "shoe_pov";
+}
+
+function shoeVideoLabel(batch: Batch | null | undefined) {
+  return isFlowShoePov(batch) ? "Flow Shoes POV · 8s" : "Seedance 2.0 · 8s";
+}
+
 export default function Home() {
   const [health, setHealth] = useState<Health | null>(null);
   const [flowAccounts, setFlowAccounts] = useState<FlowAccount[]>([]);
@@ -155,6 +166,9 @@ const [selectedId, setSelectedId] = useState<string>("");
   const [showCreate, setShowCreate] = useState(false);
   const [name, setName] = useState("Today's Fashion Batch");
   const [batchMode, setBatchMode] = useState<"fashion_tryon" | "shoe_showcase">("fashion_tryon");
+  const [shoeProvider, setShoeProvider] = useState<"enhancor" | "shoe_pov">("enhancor");
+  const [shoePovFormat, setShoePovFormat] = useState<"held" | "worn">("held");
+  const [shoePovSkinTone, setShoePovSkinTone] = useState("medium brown");
   const [scenePool, setScenePool] = useState<string[]>([scenes[0]]);
   const [profile, setProfile] = useState(profiles[0]);
   const [motionPool, setMotionPool] = useState<string[]>([maleAcademyStyles[0]]);
@@ -367,7 +381,10 @@ function restoreBatch(batchId: string) {
           avatar_b64: shoeMode || avatarIdForBatch ? null : avatarB64,
           avatar_mime: avatarMime,
           avatar_name: shoeMode ? null : (avatarName.trim() || "My Avatar"),
-          flow_account_email: newFlowAccountEmail || null
+          flow_account_email: newFlowAccountEmail || null,
+          video_provider: shoeMode ? shoeProvider : "omni",
+          shoe_pov_format: shoePovFormat,
+          shoe_pov_skin_tone: shoePovSkinTone.trim() || "medium brown"
         })
       });
       setSelectedId(batch.id); setSelected(batch); setShowCreate(false); await loadBatches();
@@ -572,8 +589,9 @@ function restoreBatch(batchId: string) {
     setRefPick(prev => {
       const current = prev[job.id] ?? job.selected_refs ?? [];
       if (current.includes(url)) return { ...prev, [job.id]: current.filter(x => x !== url) };
-      if (current.length >= 5) {
-        setError("You can select up to 5 product photos.");
+      const maxRefs = isFlowShoePov(selected) ? 4 : 5;
+      if (current.length >= maxRefs) {
+        setError(`You can select up to ${maxRefs} product photos for this provider.`);
         return prev;
       }
       setError("");
@@ -863,16 +881,21 @@ function restoreBatch(batchId: string) {
           </div>
         </section>
 
-        {showCreate && <div className="modalBackdrop"><div className="modal batchSettingsModal"><div className="modalHead"><div><h2>Create production batch</h2><p className="modalSub">Choose the workflow first. Shoe Showcase uses the exact dark-car, hands-only reference style and does not use an avatar.</p></div><button className="iconBtn" onClick={() => setShowCreate(false)}>×</button></div><div className="formGrid">
+        {showCreate && <div className="modalBackdrop"><div className="modal batchSettingsModal"><div className="modalHead"><div><h2>Create production batch</h2><p className="modalSub">Choose the workflow and shoe provider before generation begins. Shoe Showcase does not use an avatar.</p></div><button className="iconBtn" onClick={() => setShowCreate(false)}>×</button></div><div className="formGrid">
           <div className="wide settingBlock"><div className="settingLabel"><b>Workflow</b><span>These are separate generation pipelines.</span></div><div className="modeChoiceGrid">
             <button type="button" className={batchMode === "fashion_tryon" ? "modeChoice selected" : "modeChoice"} onClick={() => { setBatchMode("fashion_tryon"); if (name === "Today's Shoe Showcase") setName("Today's Fashion Batch"); }}><b>Fashion Try-On</b><span>Avatar mirror try-ons for outfits, tops, bottoms, bags and worn shoes.</span></button>
-            <button type="button" className={batchMode === "shoe_showcase" ? "modeChoice selected" : "modeChoice"} onClick={() => { setBatchMode("shoe_showcase"); if (name === "Today's Fashion Batch") setName("Today's Shoe Showcase"); setProfile("Female"); }}><b>Shoe Showcase</b><span>Dark luxury car · one approved Flow opener · Seedance 2.0 video.</span></button>
+            <button type="button" className={batchMode === "shoe_showcase" ? "modeChoice selected" : "modeChoice"} onClick={() => { setBatchMode("shoe_showcase"); if (name === "Today's Fashion Batch") setName("Today's Shoe Showcase"); setProfile("Female"); }}><b>Shoe Showcase</b><span>Choose Seedance 2.0 or Flow Shoes POV before generation.</span></button>
           </div></div>
           <label>Batch name<input value={name} onChange={e => setName(e.target.value)} /></label>
           <label>Flow Account<select value={newFlowAccountEmail} onChange={e => setNewFlowAccountEmail(e.target.value)}><option value="">Automatic / load balance</option>{flowAccounts.map(account => <option key={account.email} value={account.email}>{account.email}</option>)}</select></label>
           <label>{batchMode === "shoe_showcase" ? "Hand style" : "Creator"}<select value={profile} onChange={e => changeProfile(e.target.value)}>{profiles.map(x => <option key={x}>{x}</option>)}</select></label>
           {batchMode === "shoe_showcase" ? <>
-            <div className="wide shoeLockedPanel"><div><b>Shoe Showcase defaults</b><span>Locked to the reference-video style you supplied.</span></div><div className="shoeRuleGrid"><span>Dark luxury car</span><span>Hand / foot / lower leg only</span><span>Close-up shoe hero</span><span>3 start frames</span><span>3 × 4s Omni clips</span><span>FFmpeg hard cuts</span><span>~10 sec final</span><span>Silent</span><span>No rendered text</span></div></div>
+            <div className="wide settingBlock"><div className="settingLabel"><b>Shoe video provider</b><span>Seedance remains the default. The provider cannot be changed after generation starts.</span></div><div className="modeChoiceGrid">
+              <button type="button" className={shoeProvider === "enhancor" ? "modeChoice selected" : "modeChoice"} onClick={() => setShoeProvider("enhancor")}><b>Seedance 2.0</b><span>Approved Flow opener + shoe references + black video reference.</span></button>
+              <button type="button" className={shoeProvider === "shoe_pov" ? "modeChoice selected" : "modeChoice"} onClick={() => setShoeProvider("shoe_pov")}><b>Flow Shoes POV</b><span>Nano Banana Pro frame + Omni Flash video + 1080p upscale.</span></button>
+            </div></div>
+            {shoeProvider === "shoe_pov" && <div className="wide settingBlock"><div className="settingLabel"><b>POV format</b><span>Choose the framing for the whole batch.</span></div><div className="choiceChips"><button type="button" className={shoePovFormat === "held" ? "choiceChip selected" : "choiceChip"} onClick={() => setShoePovFormat("held")}>Handheld</button><button type="button" className={shoePovFormat === "worn" ? "choiceChip selected" : "choiceChip"} onClick={() => setShoePovFormat("worn")}>Worn POV</button></div><label style={{ marginTop: 12 }}>Visible skin tone<input value={shoePovSkinTone} onChange={e => setShoePovSkinTone(e.target.value)} placeholder="medium brown" /><span className="fieldHint">Used only when hands, ankles or lower legs are visible.</span></label></div>}
+            <div className="wide shoeLockedPanel"><div><b>{shoeProvider === "shoe_pov" ? "Flow Shoes POV" : "Seedance 2.0"}</b><span>One approved start frame, an 8-second 9:16 video, a 1080p final, and no final audio.</span></div><div className="shoeRuleGrid"><span>{shoeProvider === "shoe_pov" ? "Nano Banana Pro" : "Flow opener"}</span><span>Hand / foot / lower leg only</span><span>Close-up shoe hero</span><span>One start frame</span><span>8-second video</span><span>1080p final</span><span>Silent final</span><span>No rendered text</span></div></div>
           </> : <>
             <div className="wide settingBlock"><div className="settingLabel"><b>Backgrounds</b><span>{scenePool.length > 1 ? `Rotate ${scenePool.length} settings across the batch` : "Same setting for every product"}</span></div><div className="choiceChips">{scenes.map(x => <button type="button" key={x} className={scenePool.includes(x) ? "choiceChip selected" : "choiceChip"} onClick={() => togglePool(x, scenePool, setScenePool)}>{x}</button>)}</div></div>
             <div className="wide settingBlock"><div className="settingLabel"><b>Motion styles</b><span>{motionPool.length > 1 ? `Rotate ${motionPool.length} motion styles across the batch` : "Same motion style for every product"}</span></div><div className="motionGroupLabel">Academy presets · recommended · matched to {profile.toLowerCase()} creator</div><div className="choiceChips">{academyStylesFor(profile).map(x => <button type="button" key={x} className={motionPool.includes(x) ? "choiceChip selected" : "choiceChip"} onClick={() => togglePool(x, motionPool, setMotionPool)}>{x}</button>)}</div><div className="motionGroupLabel customLabel">Custom extras</div><div className="choiceChips">{customStyles.map(x => <button type="button" key={x} className={motionPool.includes(x) ? "choiceChip selected" : "choiceChip"} onClick={() => togglePool(x, motionPool, setMotionPool)}>{x}</button>)}</div><div className="motionNote">Academy presets follow your existing try-on workflow.</div></div>
@@ -887,8 +910,8 @@ function restoreBatch(batchId: string) {
 
         {photoJob && <div className="modalBackdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setPhotoJobId(null); }}><div className="modal photoModal" onMouseDown={(e) => e.stopPropagation()}>
           <div className="modalHead"><div><h2>Select product photos</h2><p className="modalSub">{photoJob.product_name || "Imported product"}</p></div><button type="button" className="iconBtn modalCloseBtn" aria-label="Close product photo picker" title="Close" onClick={() => setPhotoJobId(null)}>×</button></div>
-          <div className="photoPickerTop"><div><b>{refsFor(photoJob).length} selected</b><span>{selected?.mode === "shoe_showcase" ? "Choose 1–5 images that show the exact shoe, colorway, sole, side profile and details clearly." : "Choose 1–5 images that show the exact product most clearly. Listing and review photos can be mixed. If one photo caused a risky-image failure, deselect it and pick safer references."}</span></div><button className="ghost small" onClick={() => setRefPick(prev => ({ ...prev, [photoJob.id]: [] }))}>Clear</button></div>
-          {selected?.mode === "shoe_showcase" ? <div className="preGenSettings shoePreGen"><div className="preGenHead"><b>Shoe Showcase</b><span>Flow creates one opener; after approval, Seedance 2.0 creates the video.</span></div><div className="shoeRuleGrid"><span>Shoe only</span><span>{selected.creator_profile || "Female"} hand</span><span>Dark luxury car</span><span>One Flow opener</span><span>Approve one image</span><span>Seedance 2.0 · 8s</span><span>No face / upper body / generated text</span></div></div> : <div className="preGenSettings"><div className="preGenHead"><b>Generation settings</b><span>Set these before generating. Product type controls framing; background controls the image; motion controls the video.</span></div><div className="preGenGrid">
+          <div className="photoPickerTop"><div><b>{refsFor(photoJob).length} selected</b><span>{selected?.mode === "shoe_showcase" ? `Choose 1–${isFlowShoePov(selected) ? 4 : 5} images that show the exact shoe, colorway, sole, side profile and details clearly.` : "Choose 1–5 images that show the exact product most clearly. Listing and review photos can be mixed. If one photo caused a risky-image failure, deselect it and pick safer references."}</span></div><button className="ghost small" onClick={() => setRefPick(prev => ({ ...prev, [photoJob.id]: [] }))}>Clear</button></div>
+          {selected?.mode === "shoe_showcase" ? <div className="preGenSettings shoePreGen"><div className="preGenHead"><b>Shoe Showcase</b><span>{isFlowShoePov(selected) ? `Nano Banana Pro creates one ${selected.shoe_pov_format === "worn" ? "worn" : "handheld"} POV frame; after approval, Flow creates the video.` : "Flow creates one opener; after approval, Seedance 2.0 creates the video."}</span></div><div className="shoeRuleGrid"><span>Shoe only</span><span>{selected.creator_profile || "Female"} hand</span><span>{isFlowShoePov(selected) ? `${selected.shoe_pov_format === "worn" ? "Worn" : "Handheld"} POV` : "Dark luxury car"}</span><span>One approved frame</span><span>{shoeVideoLabel(selected)}</span><span>1080p final</span><span>No face / upper body / generated text</span></div></div> : <div className="preGenSettings"><div className="preGenHead"><b>Generation settings</b><span>Set these before generating. Product type controls framing; background controls the image; motion controls the video.</span></div><div className="preGenGrid">
             <label>Product type <span className="detectedTag">Detected: {productTypeLabel(photoJob.focus)}</span><select value={settingsFor(photoJob).focus} onChange={e => setJobSettings(prev => ({ ...prev, [photoJob.id]: { ...settingsFor(photoJob), focus: e.target.value } }))}>{productTypes.map(x => <option key={x.value} value={x.value}>{x.label}</option>)}</select></label>
             <label>Background<select value={settingsFor(photoJob).scene} onChange={e => setJobSettings(prev => ({ ...prev, [photoJob.id]: { ...settingsFor(photoJob), scene: e.target.value } }))}>{scenes.map(x => <option key={x}>{x}</option>)}</select></label>
             <label>Motion style<select value={settingsFor(photoJob).motion_style} onChange={e => setJobSettings(prev => ({ ...prev, [photoJob.id]: { ...settingsFor(photoJob), motion_style: e.target.value } }))}>{Array.from(new Set([settingsFor(photoJob).motion_style, ...motionStylesFor(selected?.creator_profile || "Male")])).map(x => <option key={x}>{x}</option>)}</select><span className="fieldHint">Academy presets use the PDF sequence; product-specific bag/shoe/fit logic is automatic.</span></label>
@@ -1037,7 +1060,7 @@ function restoreBatch(batchId: string) {
               <textarea className="linkBox" value={links} onChange={e => setLinks(e.target.value)} placeholder="https://www.tiktok.com/view/product/..." />
               {String(selected.status || "open").toLowerCase() === "done" && <div className="doneNotice">This batch is done. New product links are locked.</div>}
               <button className="primary full" disabled={!links.trim() || loading || String(selected.status || "open").toLowerCase() === "done"} onClick={importLinks}>Import products</button>
-              <div className="miniInfo"><b>Current batch</b><span>{selected.mode === "shoe_showcase" ? `${selected.creator_profile} hand · Dark luxury car · Seedance 2.0` : `${selected.creator_profile} · ${(selected.scene_pool?.length || 1)} background${(selected.scene_pool?.length || 1) === 1 ? "" : "s"} · ${(selected.motion_pool?.length || 1)} motion style${(selected.motion_pool?.length || 1) === 1 ? "" : "s"}`}</span></div>
+              <div className="miniInfo"><b>Current batch</b><span>{selected.mode === "shoe_showcase" ? `${selected.creator_profile} · ${isFlowShoePov(selected) ? `${selected.shoe_pov_format === "worn" ? "Worn" : "Handheld"} POV` : "Dark luxury car"} · ${shoeVideoLabel(selected)}` : `${selected.creator_profile} · ${(selected.scene_pool?.length || 1)} background${(selected.scene_pool?.length || 1) === 1 ? "" : "s"} · ${(selected.motion_pool?.length || 1)} motion style${(selected.motion_pool?.length || 1) === 1 ? "" : "s"}`}</span></div>
             </div>
           </section>
 
@@ -1045,7 +1068,7 @@ function restoreBatch(batchId: string) {
             <div className="panelHead productionHead">
               <div>
                 <h3>Production queue</h3>
-                <p>{selected.mode === "shoe_showcase" ? "Confirm shoe photos → Flow generates one opener → approve it → Seedance 2.0 creates an 8-second video." : "Each image starts automatically after you confirm its product photos. The Railway worker keeps processing even if this page is closed."}</p>
+                <p>{selected.mode === "shoe_showcase" ? (isFlowShoePov(selected) ? "Confirm shoe photos → Nano Banana Pro generates one POV frame → approve it → Flow creates an 8-second video → upscale to 1080p." : "Confirm shoe photos → Flow generates one opener → approve it → Seedance 2.0 creates an 8-second video.") : "Each image starts automatically after you confirm its product photos. The Railway worker keeps processing even if this page is closed."}</p>
               </div>
               <div className="bulkActions">
                 <button className="ghost small bulkVideo" disabled={loading || !selected.jobs.some(j => selected.mode === "shoe_showcase" ? editorialFramesReady(j) && j.video_status !== "completed" : j.image_status === "completed" && (j.video_status === "pending" || !j.video_status) && j.upscale_status !== "completed")} onClick={generateAllVideos}>{selected.mode === "shoe_showcase" ? "Generate all editorial videos" : "Generate all videos"}</button>
@@ -1066,7 +1089,7 @@ function restoreBatch(batchId: string) {
                   </div>
                   <div className="jobBody">
                     <h4>{job.product_name || "Importing product…"}</h4>
-                    <div className="productionBadges"><span>{shoeMode ? "Shoes" : productTypeLabel(job.focus)}</span><span>{job.scene || selected.scene || "Background"}</span><span>{shoeMode ? "Seedance 2.0 · 8s" : job.motion_style || selected.video_style || "Motion"}</span></div>
+                    <div className="productionBadges"><span>{shoeMode ? "Shoes" : productTypeLabel(job.focus)}</span><span>{shoeMode && isFlowShoePov(selected) ? `${selected.shoe_pov_format === "worn" ? "Worn" : "Handheld"} POV` : job.scene || selected.scene || "Background"}</span><span>{shoeMode ? shoeVideoLabel(selected) : job.motion_style || selected.video_style || "Motion"}</span></div>
                     {!!job.selected_refs?.length && <div className="usedRefs"><div className="usedRefsHead"><b>Product photos used</b><span>{job.selected_refs.length}</span></div><div className="usedRefStrip">{job.selected_refs.map((url, i) => <a href={url} target="_blank" rel="noreferrer" title={`Open product reference ${i + 1}`} key={`${job.id}-used-${i}`}><img src={url} alt={`Selected product reference ${i + 1}`} /><span>{i + 1}</span></a>)}</div></div>}
 
                     {shoeMode && !!shots.length && <div className="editorialPanel">
@@ -1093,7 +1116,7 @@ function restoreBatch(batchId: string) {
                     <div className="jobActions">
                       {job.stage !== "pending_import" && job.stage !== "importing" && <button className="ghost small" disabled={loading} onClick={() => void editProductName(job)}>{!job.product_name || job.product_name === "Unknown Product" ? "Set product name" : "Edit name"}</button>}
                       {job.stage === "imported" && <button className="primary small" disabled={loading} onClick={() => openPhotoPicker(job)}>Select product photos</button>}
-                      {job.stage === "ready_for_image" && <button className="primary small" disabled={loading} onClick={() => generateOneImage(job)}>{shoeMode ? "Generate editorial frames" : "Generate image"}</button>}
+                      {job.stage === "ready_for_image" && <button className="primary small" disabled={loading} onClick={() => generateOneImage(job)}>{shoeMode ? "Generate shoe opener" : "Generate image"}</button>}
                       {canRepickPhotos(job) && <button className="ghost small" disabled={loading} onClick={() => openPhotoPicker(job)}>Repick photos</button>}
                       {!shoeMode && job.image_status === "completed" && !job.approved && <button className="primary small" disabled={loading} onClick={() => approve(job)}>Approve + video</button>}
                       {!shoeMode && job.image_status === "completed" && <button className="ghost small" disabled={loading} onClick={() => openVideoPrompt(job)}>Video prompt</button>}
