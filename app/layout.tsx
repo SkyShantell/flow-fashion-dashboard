@@ -4,8 +4,6 @@ import VideoProviderControl from "./VideoProviderControl";
 import RegenerateVideoLabels from "./RegenerateVideoLabels";
 import HookPickerControl from "./HookPickerControl";
 import ShoeO1Control from "./ShoeO1Control";
-import ShoeReferenceControl from "./ShoeReferenceControl";
-import ShoeO1LegacyCopyFix from "./ShoeO1LegacyCopyFix";
 import ManualFFmpegControl from "./ManualFFmpegControl";
 import RedoFFmpegControl from "./RedoFFmpegControl";
 import AppleEmojiSeeder from "./AppleEmojiSeeder";
@@ -24,8 +22,6 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <RegenerateVideoLabels />
         <HookPickerControl />
         <ShoeO1Control />
-        <ShoeReferenceControl />
-        <ShoeO1LegacyCopyFix />
         <ManualFFmpegControl />
         <RedoFFmpegControl />
         <AppleEmojiSeeder />
