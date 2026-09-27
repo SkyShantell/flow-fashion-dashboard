@@ -20,6 +20,9 @@ type BatchLite = {
   id: string;
   name?: string | null;
   mode?: string | null;
+  video_provider?: string | null;
+  shoe_pov_format?: string | null;
+  shoe_pov_skin_tone?: string | null;
   jobs: JobLite[];
 };
 
@@ -56,6 +59,8 @@ export default function ShoeO1Control() {
   const [error, setError] = useState("");
 
   const isShoe = activeBatch?.mode === "shoe_showcase";
+  const isPov = activeBatch?.video_provider === "shoe_pov";
+  const providerName = isPov ? "Flow Shoes POV" : "Seedance 2.0";
 
   const loadBatches = useCallback(async () => {
     try {
@@ -134,20 +139,20 @@ export default function ShoeO1Control() {
       });
       await loadActive(job.id ? batchId : "");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not start Seedance 2.0 video");
+      setError(e instanceof Error ? e.message : `Could not start ${providerName} video`);
     } finally {
       setBusyJob("");
     }
   }
 
   async function regenerateO1(job: JobLite) {
-    if (!window.confirm(`Regenerate the Seedance 2.0 video for “${job.product_name || "this shoe"}”?`)) return;
+    if (!window.confirm(`Regenerate the ${providerName} video for “${job.product_name || "this shoe"}”?`)) return;
     setBusyJob(job.id); setError("");
     try {
       const info = await backend<VideoPromptInfo>(`/jobs/${job.id}/video-prompt`);
       const lastPrompt = (info.prompt_used || "").trim();
       const prompt = (/10 seconds|5 seconds|Kling O1/i.test(lastPrompt) ? info.default_prompt : lastPrompt || info.default_prompt || "").trim();
-      if (!prompt) throw new Error("No Seedance 2.0 prompt is available for this shoe.");
+      if (!prompt) throw new Error(`No ${providerName} prompt is available for this shoe.`);
       await backend<JobLite>(`/jobs/${job.id}/regenerate-video`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -155,7 +160,7 @@ export default function ShoeO1Control() {
       });
       await loadActive(batchId);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not regenerate Seedance 2.0 video");
+      setError(e instanceof Error ? e.message : `Could not regenerate ${providerName} video`);
     } finally {
       setBusyJob("");
     }
@@ -181,24 +186,24 @@ export default function ShoeO1Control() {
               onClick={() => void approveAndGenerate(job)}
               title={`Approved Flow opener becomes @image1; ${refs} product reference${refs === 1 ? "" : "s"} follow as @image2+`}
             >
-              {busy ? "Queueing…" : "Approve + Seedance 2.0"}
+              {busy ? "Queueing…" : `Approve + ${providerName}`}
             </button>
           )}
           {processing && (
             <span style={{ alignSelf: "center", fontSize: 11, color: "#aaa", padding: "0 4px" }}>
-              Seedance 2.0 · {job.video_status || "processing"}
+              {providerName} · {job.video_status || "processing"}
             </span>
           )}
           {finished && (
             <button type="button" className="ghost small" disabled={busy} onClick={() => void regenerateO1(job)}>
-              {busy ? "Queueing…" : "Regenerate Seedance 2.0"}
+              {busy ? "Queueing…" : `Regenerate ${providerName}`}
             </button>
           )}
         </div>,
         target,
       );
     });
-  }, [activeBatch, batchId, busyJob, isShoe, targets]);
+  }, [activeBatch, batchId, busyJob, isShoe, providerName, targets]);
 
   if (!isShoe || !activeBatch) return null;
 
@@ -210,7 +215,9 @@ export default function ShoeO1Control() {
     `}</style>
     {headerTarget && createPortal(
       <p className="shoeO1HeaderCopy">
-        Confirm shoe photos → Flow generates one opening image → approve it → Seedance 2.0 creates an 8-second 9:16 video using the opener, your shoe photos, and the two-second reference video.
+        {isPov
+          ? `Confirm shoe photos → Nano Banana Pro generates one ${activeBatch.shoe_pov_format === "worn" ? "worn" : "handheld"} POV frame → approve it → Flow creates an 8-second 9:16 video → upscale to 1080p.`
+          : "Confirm shoe photos → Flow generates one opening image → approve it → Seedance 2.0 creates an 8-second 9:16 video using the opener, your shoe photos, and the two-second reference video."}
       </p>,
       headerTarget,
     )}
